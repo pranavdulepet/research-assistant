@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <title>PDF Research Assistant</title>
+    <style>
+        /* Overall page layout */
+        body {
+            margin: 0;
+            font-family: sans-serif;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Sidebar styling */
+        #sidebar {
+            width: 250px;
+            background-color: #f7f7f7;
+            border-right: 1px solid #ccc;
+            padding: 10px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            transition: transform 0.3s ease;
+        }
+
+        #sidebar.closed {
+            transform: translateX(-100%);
+        }
+
+        #sidebar .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        #sidebar .conversation-item {
+            padding: 8px;
+            border-bottom: 1px solid #ddd;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #sidebar .conversation-item:hover {
+            background-color: #eaeaea;
+        }
+
+        /* Content area */
+        #content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        #topbar {
+            background-color: #fff;
+            padding: 10px;
+            border-bottom: 1px solid #ccc;
+            display: flex;
+            align-items: center;
+        }
+
+        #topbar h1 {
+            flex-grow: 1;
+            margin: 0;
+            font-size: 1.2em;
+        }
+
+        #main {
+            flex-grow: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        #left-panel {
+            width: 70%;
+            padding: 20px;
+            overflow-y: auto;
+            border-right: 1px solid #ccc;
+            white-space: pre-line;
+        }
+
+        #right-panel {
+            width: 30%;
+            padding: 20px;
+            overflow-y: auto;
+            border-left: 1px solid #ccc;
+        }
+
+        .page-content {
+            margin-bottom: 40px;
+        }
+
+        .figure-link {
+            color: blue;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
+        /* Modal styling for figures */
+        #figureModal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+
+        #figureModalContent {
+            background-color: #fff;
+            margin: 10% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 80%;
+            max-width: 800px;
+            position: relative;
+        }
+
+        #modalClose {
+            position: absolute;
+            top: 10px;
+            right: 20px;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        #modalContent img,
+        #modalContent object {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 0 auto;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Sidebar (Conversation List) -->
+    <div id="sidebar">
+        <div class="sidebar-header">
+            <span>PDF Uploads</span>
+            <button id="closeSidebar">X</button>
+        </div>
+        <div id="conversationList"></div>
+    </div>
+    <!-- Button to open sidebar when closed -->
+    <button id="openSidebar" style="display:none; position:absolute; top:10px; left:10px; z-index:1100;">☰</button>
+
+    <!-- Main Content Area -->
+    <div id="content">
+        <div id="topbar">
+            <h1>PDF Research Assistant</h1>
+        </div>
+        <div id="main">
+            <div id="left-panel">
+                <h2>Upload a PDF</h2>
+                <form id="uploadForm" method="POST" enctype="multipart/form-data" action="/upload">
+                    <input type="file" name="pdfFile" accept=".pdf" required />
+                    <button type="submit">Upload</button>
+                </form>
+                <hr>
+                <div id="pages"></div>
+            </div>
+            <div id="right-panel">
+                <h2>Preview Panel</h2>
+                <p>Click a figure reference to open the figure in a modal.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for displaying figures -->
+    <div id="figureModal">
+        <div id="figureModalContent">
+            <span id="modalClose">&times;</span>
+            <div id="modalContent"></div>
+        </div>
+    </div>
+
+    <script>
+        // Global conversation array; each conversation is { id, title, data }.
+        let conversations = [];
+        let currentConversationId = null;
+
+        // Render the sidebar conversation list.
+        function renderSidebar() {
+            const list = document.getElementById('conversationList');
+            list.innerHTML = '';
+            conversations.forEach(conv => {
+                const item = document.createElement('div');
+                item.className = 'conversation-item';
+                item.dataset.id = conv.id;
+                item.innerHTML = `<span>${conv.title}</span> <button onclick="deleteConversation('${conv.id}'); event.stopPropagation();">Delete</button>`;
+                item.addEventListener('click', function () {
+                    loadConversation(conv.id);
+                });
+                list.appendChild(item);
+            });
+        }
+
+        // Load a conversation by id.
+        function loadConversation(id) {
+            const conv = conversations.find(c => c.id === id);
+            if (conv) {
+                currentConversationId = id;
+                renderExtractedData(conv.data);
+            }
+        }
+
+        // Delete a conversation by id.
+        function deleteConversation(id) {
+            conversations = conversations.filter(c => c.id !== id);
+            if (currentConversationId === id) {
+                document.getElementById('pages').innerHTML = '';
+            }
+            renderSidebar();
+        }
+
+        // Handle PDF upload.
+        document.getElementById('uploadForm').addEventListener('submit', async function (e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const fileInput = document.querySelector('input[name="pdfFile"]');
+            const fileName = fileInput.files[0].name;
+
+            const response = await fetch('/upload', { method: 'POST', body: formData });
+            if (!response.ok) {
+                alert("Error uploading PDF");
+                return;
+            }
+            const data = await response.json();
+
+            // Create a new conversation.
+            const conv = {
+                id: uuidv4(),
+                title: fileName,
+                data: data
+            };
+            conversations.push(conv);
+            renderSidebar();
+            loadConversation(conv.id);
+        });
+
+        // Render the extracted PDF data into the pages container.
+        function renderExtractedData(data) {
+            const pagesContainer = document.getElementById('pages');
+            pagesContainer.innerHTML = '';
+            data.pages.forEach(page => {
+                const pageDiv = document.createElement('div');
+                pageDiv.className = 'page-content';
+                pageDiv.innerHTML = `<h3>Page ${page.page_number}</h3><div>${page.text}</div>`;
+                pagesContainer.appendChild(pageDiv);
+            });
+            document.querySelectorAll('.figure-link').forEach(link => {
+                link.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    openFigureModal(link.getAttribute('data-figure-url'));
+                });
+            });
+        }
+
+        // Modal functionality for figures.
+        function openFigureModal(figureUrl) {
+            const modal = document.getElementById('figureModal');
+            const modalContent = document.getElementById('modalContent');
+            if (figureUrl.endsWith('.svg')) {
+                modalContent.innerHTML = `<object type="image/svg+xml" data="${figureUrl}"></object>`;
+            } else {
+                modalContent.innerHTML = `<img src="${figureUrl}" alt="Figure">`;
+            }
+            modal.style.display = "block";
+        }
+
+        document.getElementById('modalClose').addEventListener('click', function () {
+            document.getElementById('figureModal').style.display = "none";
+        });
+        window.addEventListener('click', function (e) {
+            if (e.target === document.getElementById('figureModal')) {
+                document.getElementById('figureModal').style.display = "none";
+            }
+        });
+
+        // Sidebar toggle functionality.
+        document.getElementById('closeSidebar').addEventListener('click', function () {
+            document.getElementById('sidebar').classList.add('closed');
+            document.getElementById('openSidebar').style.display = 'block';
+        });
+        document.getElementById('openSidebar').addEventListener('click', function () {
+            document.getElementById('sidebar').classList.remove('closed');
+            document.getElementById('openSidebar').style.display = 'none';
+        });
+
+        // Simple UUID generator for conversation IDs.
+        function uuidv4() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+    </script>
+</body>
+
+</html>
