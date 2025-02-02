@@ -5,13 +5,30 @@ import re
 import uuid
 import math
 import subprocess
+import json
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'static/figures'
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
-# Threshold (in PDF points) above which we consider a figure "special" and convert it to SVG.
-SPECIAL_THRESHOLD = 300  
+# Directories for uploads and extracted figures.
+app.config['UPLOAD_FOLDER'] = 'static/figures'
+app.config['UPLOAD_PDF'] = 'static/uploads'
+os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+os.makedirs(app.config['UPLOAD_PDF'], exist_ok=True)
+
+# File where conversation data will be stored.
+CONVERSATIONS_FILE = "conversations.json"
+
+SPECIAL_THRESHOLD = 300  # threshold (in PDF points) for converting a figure to SVG
+
+def load_conversations():
+    if os.path.exists(CONVERSATIONS_FILE):
+        with open(CONVERSATIONS_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+def save_conversations(conversations):
+    with open(CONVERSATIONS_FILE, "w") as f:
+        json.dump(conversations, f, indent=2)
 
 @app.route('/')
 def index():
@@ -25,19 +42,23 @@ def upload_pdf():
     if pdf_file.filename == '':
         return "No selected file", 400
 
-    # Save uploaded PDF to a temporary location
-    temp_pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], 'temp_upload.pdf')
-    pdf_file.save(temp_pdf_path)
-
-    extracted_data = extract_text_and_figures(temp_pdf_path)
-    # Optionally remove the temporary PDF: os.remove(temp_pdf_path)
-    return jsonify(extracted_data)
+    # Save the PDF with a unique filename.
+    unique_pdf_name = f"{uuid.uuid4()}.pdf"
+    pdf_path = os.path.join(app.config['UPLOAD_PDF'], unique_pdf_name)
+    pdf_file.save(pdf_path)
+    
+    # Run extraction on the PDF.
+    extraction_data = extract_text_and_figures(pdf_path)
+    
+    # Return the PDF URL and extraction data.
+    result = {
+        "pdf_url": f"/{pdf_path}",
+        "extraction": extraction_data
+    }
+    return jsonify(result)
 
 def convert_region_to_svg(pdf_path, page_number, bbox, output_svg):
-    """
-    Convert a region of the PDF page to an SVG file using pdftocairo.
-    bbox is a tuple (x0, y0, x1, y1); coordinates are rounded to integers.
-    """
+    # Round coordinates to integers.
     x0, y0, x1, y1 = bbox
     x0, y0, x1, y1 = int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))
     width = x1 - x0
@@ -58,47 +79,33 @@ def convert_region_to_svg(pdf_path, page_number, bbox, output_svg):
     subprocess.run(command, check=True)
 
 def fix_math_extraction(text):
-    """
-    Optionally correct common mis-extraction issues.
-    For example, replace caret (ˆ) sequences with a literal caret.
-    (You can adjust this function as needed.)
-    """
-    # In this example, we'll simply replace the caret (ˆ) with '^'
+    # Simple fixes: replace caret characters and "D X" if needed.
     text = text.replace("ˆ", "^")
-    # And replace "D X" with "DX" if that's desired.
     text = text.replace("D X", "DX")
     return text
 
 def extract_text_and_figures(pdf_path):
     doc = fitz.open(pdf_path)
     result = {"pages": []}
-
-    # Regex for LaTeX-style figure references (e.g., "Figure 1", "Fig. 2.1", etc.)
     figure_ref_regex = re.compile(
         r'(?:Figure|Fig\.?|FIGURE)\s+(\d+(\.\d+)*[a-z]?)',
         re.IGNORECASE
     )
 
     for page_index, page in enumerate(doc):
-        # Get text blocks with bounding boxes
         text_blocks = page.get_text("blocks")
-        # Get image info; each info's bbox is a tuple (x0, y0, x1, y1)
         image_info_list = page.get_image_info(xrefs=True)
-
         processed_blocks = []
-        # Process each text block as plaintext.
         for block in text_blocks:
             block_text = block[4]
-            # Optionally fix extraction issues:
             block_text = fix_math_extraction(block_text)
             processed_blocks.append(block_text)
 
-        # Find figure references in the original text (for positioning)
         references_on_page = []
         for block in text_blocks:
             x0, y0, x1, y1, block_text, block_id = block[0], block[1], block[2], block[3], block[4], block[5]
             for match in figure_ref_regex.finditer(block_text):
-                ref_str = match.group(0)  # e.g. "Figure 2.1"
+                ref_str = match.group(0)
                 ref_center = ((x0 + x1) / 2.0, (y0 + y1) / 2.0)
                 references_on_page.append({
                     "reference_text": ref_str,
@@ -115,12 +122,11 @@ def extract_text_and_figures(pdf_path):
             width = bbox.width
             height = bbox.height
 
-            # For large figures, convert to SVG; otherwise extract as a raster image.
             if width >= SPECIAL_THRESHOLD or height >= SPECIAL_THRESHOLD:
                 filename = f"{uuid.uuid4()}.svg"
                 output_svg_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                 convert_region_to_svg(pdf_path, page_index + 1, (bbox.x0, bbox.y0, bbox.x1, bbox.y1), output_svg_path)
-                figure_url = f"/static/figures/{filename}"
+                figure_url = f"/{os.path.join(app.config['UPLOAD_FOLDER'], filename)}"
             else:
                 base_image = doc.extract_image(xref)
                 image_bytes = base_image["image"]
@@ -129,7 +135,7 @@ def extract_text_and_figures(pdf_path):
                 image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                 with open(image_path, "wb") as f:
                     f.write(image_bytes)
-                figure_url = f"/static/figures/{filename}"
+                figure_url = f"/{image_path}"
 
             figures_data.append({
                 "url": figure_url,
@@ -138,7 +144,6 @@ def extract_text_and_figures(pdf_path):
                 "assigned_ref": None
             })
 
-        # For each figure reference, match it to the nearest unassigned image.
         for ref_obj in references_on_page:
             ref_center = ref_obj["center"]
             best_image = None
@@ -155,12 +160,9 @@ def extract_text_and_figures(pdf_path):
             if best_image:
                 best_image["assigned_ref"] = ref_obj["reference_text"]
 
-        # Build mapping: reference text → figure URL.
         ref_to_url_map = { img["assigned_ref"]: img["url"]
                            for img in figures_data if img["assigned_ref"] }
 
-        # Reconstruct the page HTML from the processed blocks,
-        # replacing figure references with clickable links.
         replaced_page_html = ""
         for block_text in processed_blocks:
             def replace_ref(match):
@@ -180,6 +182,17 @@ def extract_text_and_figures(pdf_path):
 
     doc.close()
     return result
+
+@app.route("/conversations", methods=["GET"])
+def get_conversations():
+    convs = load_conversations()
+    return jsonify(convs)
+
+@app.route("/conversations", methods=["POST"])
+def save_conversations_endpoint():
+    convs = request.get_json()
+    save_conversations(convs)
+    return jsonify({"status": "ok"})
 
 if __name__ == '__main__':
     app.run(debug=True)
