@@ -227,6 +227,46 @@
         .textLayer .highlight.selected {
             background-color: rgb(0, 100, 0);
         }
+
+        /* Loading overlay */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .loading-spinner {
+            border: 5px solid #f3f3f3;
+            border-radius: 50%;
+            border-top: 5px solid #3498db;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+
+        .loading-text {
+            color: white;
+            margin-top: 10px;
+            font-size: 1.2em;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
     </style>
     <!-- Include PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
@@ -292,6 +332,31 @@
     <!-- Add selection popup menu -->
     <div id="selectionPopup">
         <button id="addAnnotationBtn">Add annotation</button>
+    </div>
+
+    <div class="loading-overlay">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Processing...</div>
+    </div>
+
+    <!-- Chat Interface -->
+    <button id="chatButton" style="position: fixed; bottom: 20px; right: 20px; z-index: 1000; padding: 10px 20px;">
+        Chat with Paper
+    </button>
+
+    <div id="chatInterface"
+        style="display: none; position: fixed; bottom: 20px; right: 20px; width: 350px; height: 500px; background: white; border: 1px solid #ccc; border-radius: 8px; z-index: 1000; box-shadow: 0 0 10px rgba(0,0,0,0.1);">
+        <div
+            style="padding: 10px; border-bottom: 1px solid #ccc; display: flex; justify-content: space-between; align-items: center;">
+            <h3 style="margin: 0;">Chat with Paper</h3>
+            <button id="closeChatButton">×</button>
+        </div>
+        <div id="chatMessages" style="height: 380px; overflow-y: auto; padding: 10px;"></div>
+        <div style="padding: 10px; border-top: 1px solid #ccc;">
+            <textarea id="chatInput" style="width: 100%; height: 50px; margin-bottom: 10px; resize: none;"
+                placeholder="Ask a question about the paper..."></textarea>
+            <button id="sendChatButton" style="width: 100%;">Send</button>
+        </div>
     </div>
 
     <script>
@@ -430,17 +495,19 @@
                 type: annotationType,
                 selectedText: currentSelection.text
             };
-            currentAnnotations.push(annotation);
+
             if (currentConversationId) {
                 const conv = conversations.find(c => c.id === currentConversationId);
                 if (conv) {
                     conv.annotations.push(annotation);
+                    currentAnnotations = conv.annotations; // Update reference
                     renderAnnotations(conv.annotations);
                     persistConversations();
                     // Re-render PDF with updated annotations
                     renderPDF(currentPdfUrl, currentAnnotations);
                 }
             }
+
             modal.style.display = "none";
             document.getElementById('annotationText').value = "";
         });
@@ -453,32 +520,32 @@
                 const div = document.createElement('div');
                 div.className = 'annotation-item';
                 div.innerHTML = `
-                    <strong>Page ${ann.page}</strong><br>
-                    <em>Selected text:</em> "${ann.selectedText}"<br>
-                    <em>Comment:</em> ${ann.comment}<br>
-                    <em>Type:</em> ${ann.type}`;
+            <strong>Page ${ann.page}</strong><br>
+            <em>Selected text:</em> "${ann.selectedText}"<br>
+            <em>Comment:</em> ${ann.comment}<br>
+            <em>Type:</em> ${ann.type}`;
                 div.innerHTML += ` <button onclick="askAIVerify('${ann.id}');">Ask AI to verify</button>`;
                 div.innerHTML += ` <button onclick="askAIAnswer('${ann.id}');">Ask AI to answer</button>`;
                 div.innerHTML += ` <button onclick="deleteAnnotation('${ann.id}');">Delete</button>`;
-                list.appendChild(div);
+                list.appendChild(div);  // Add this line to append the div to the list
             });
         }
-
         // AI verification function
         async function askAIVerify(annotationId) {
-            console.log("askAIVerify called with id:", annotationId);
-            const conv = conversations.find(c => c.id === currentConversationId);
-            if (!conv) {
-                console.error("No conversation found");
-                return;
-            }
-            const ann = conv.annotations.find(a => a.id === annotationId);
-            if (!ann) {
-                console.error("No annotation found");
-                return;
-            }
-
+            showLoading('AI is verifying the annotation...');
             try {
+                console.log("askAIVerify called with id:", annotationId);
+                const conv = conversations.find(c => c.id === currentConversationId);
+                if (!conv) {
+                    console.error("No conversation found");
+                    return;
+                }
+                const ann = conv.annotations.find(a => a.id === annotationId);
+                if (!ann) {
+                    console.error("No annotation found");
+                    return;
+                }
+
                 // Get figures from the current page and surrounding pages
                 const pageNum = ann.page;
                 const relevantFigures = conv.extraction.pages
@@ -526,23 +593,26 @@
             } catch (error) {
                 console.error('Error:', error);
                 alert('Failed to verify annotation');
+            } finally {
+                hideLoading();
             }
         }
 
         async function askAIAnswer(annotationId) {
-            console.log("askAIAnswer called with id:", annotationId);
-            const conv = conversations.find(c => c.id === currentConversationId);
-            if (!conv) {
-                console.error("No conversation found");
-                return;
-            }
-            const ann = conv.annotations.find(a => a.id === annotationId);
-            if (!ann) {
-                console.error("No annotation found");
-                return;
-            }
-
+            showLoading('AI is analyzing your question...');
             try {
+                console.log("askAIAnswer called with id:", annotationId);
+                const conv = conversations.find(c => c.id === currentConversationId);
+                if (!conv) {
+                    console.error("No conversation found");
+                    return;
+                }
+                const ann = conv.annotations.find(a => a.id === annotationId);
+                if (!ann) {
+                    console.error("No annotation found");
+                    return;
+                }
+
                 // Get figures from the current page and surrounding pages
                 const pageNum = ann.page;
                 const relevantFigures = conv.extraction.pages
@@ -590,6 +660,8 @@
             } catch (error) {
                 console.error('Error:', error);
                 alert('Failed to get AI answer');
+            } finally {
+                hideLoading();
             }
         }
 
@@ -672,27 +744,34 @@
 
         document.getElementById('uploadForm').addEventListener('submit', async function (e) {
             e.preventDefault();
-            const formData = new FormData(this);
-            const fileInput = document.querySelector('input[name="pdfFile"]');
-            const fileName = fileInput.files[0].name;
+            showLoading('Uploading and processing PDF...');
 
-            const response = await fetch('/upload', { method: 'POST', body: formData });
-            if (!response.ok) {
-                alert("Error uploading PDF");
-                return;
+            try {
+                const formData = new FormData(this);
+                const fileInput = document.querySelector('input[name="pdfFile"]');
+                const fileName = fileInput.files[0].name;
+
+                const response = await fetch('/upload', { method: 'POST', body: formData });
+                if (!response.ok) {
+                    throw new Error("Error uploading PDF");
+                }
+                const data = await response.json();
+                const conv = {
+                    id: uuidv4(),
+                    title: fileName,
+                    pdf_url: data.pdf_url,
+                    extraction: data.extraction,
+                    annotations: []
+                };
+                conversations.push(conv);
+                renderSidebar();
+                loadConversation(conv.id);
+                persistConversations();
+            } catch (error) {
+                alert("Error uploading PDF: " + error.message);
+            } finally {
+                hideLoading();
             }
-            const data = await response.json();
-            const conv = {
-                id: uuidv4(),
-                title: fileName,
-                pdf_url: data.pdf_url,
-                extraction: data.extraction,
-                annotations: []
-            };
-            conversations.push(conv);
-            renderSidebar();
-            loadConversation(conv.id);
-            persistConversations();
         });
 
         // Sidebar toggle functionality.
@@ -763,6 +842,113 @@
         document.addEventListener('mousedown', function (event) {
             if (!event.target.closest('#selectionPopup')) {
                 document.getElementById('selectionPopup').style.display = 'none';
+            }
+        });
+
+        function showLoading(message = 'Processing...') {
+            const overlay = document.querySelector('.loading-overlay');
+            const text = overlay.querySelector('.loading-text');
+            text.textContent = message;
+            overlay.style.display = 'flex';
+        }
+
+        function hideLoading() {
+            document.querySelector('.loading-overlay').style.display = 'none';
+        }
+
+        // Chat functionality
+        const chatButton = document.getElementById('chatButton');
+        const chatInterface = document.getElementById('chatInterface');
+        const closeChatButton = document.getElementById('closeChatButton');
+        const chatMessages = document.getElementById('chatMessages');
+        const chatInput = document.getElementById('chatInput');
+        const sendChatButton = document.getElementById('sendChatButton');
+
+        chatButton.addEventListener('click', () => {
+            chatInterface.style.display = 'block';
+            chatButton.style.display = 'none';
+        });
+
+        closeChatButton.addEventListener('click', () => {
+            chatInterface.style.display = 'none';
+            chatButton.style.display = 'block';
+        });
+
+        async function sendChatMessage(message) {
+            const conv = conversations.find(c => c.id === currentConversationId);
+            if (!conv) {
+                alert('Please upload a paper first');
+                return;
+            }
+
+            // Add user message to chat
+            addMessageToChat('user', message);
+
+            // Show loading state
+            showLoading('AI is thinking...');
+
+            try {
+                const response = await fetch('/chat-with-paper', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        paper_context: conv.extraction
+                    })
+                });
+
+                const result = await response.json();
+                if (result.error) {
+                    throw new Error(result.error);
+                }
+
+                // Add AI response to chat
+                addMessageToChat('ai', result.response);
+            } catch (error) {
+                console.error('Error:', error);
+                addMessageToChat('system', 'Error: ' + error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        function addMessageToChat(type, message) {
+            const messageDiv = document.createElement('div');
+            messageDiv.style.marginBottom = '10px';
+            messageDiv.style.padding = '8px';
+            messageDiv.style.borderRadius = '8px';
+            messageDiv.style.maxWidth = '80%';
+
+            if (type === 'user') {
+                messageDiv.style.backgroundColor = '#e3f2fd';
+                messageDiv.style.marginLeft = 'auto';
+            } else if (type === 'ai') {
+                messageDiv.style.backgroundColor = '#f5f5f5';
+                messageDiv.style.marginRight = 'auto';
+            } else {
+                messageDiv.style.backgroundColor = '#ffebee';
+                messageDiv.style.marginRight = 'auto';
+            }
+
+            messageDiv.textContent = message;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        sendChatButton.addEventListener('click', () => {
+            const message = chatInput.value.trim();
+            if (message) {
+                sendChatMessage(message);
+                chatInput.value = '';
+            }
+        });
+
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendChatButton.click();
             }
         });
     </script>

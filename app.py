@@ -315,7 +315,7 @@ def answer_question():
     Available Figures in Context:
     {figures_context}
     
-    Please provide a clear and detailed answer based on the provided context and figures.
+    Please provide a clear and detailed answer based on the provided context and figures and your general knowledge.
     """
     
     try:
@@ -325,6 +325,46 @@ def answer_question():
         
         return jsonify({
             "answer": response.text
+        })
+    except Exception as e:
+        print("\n=== ERROR OCCURRED ===")
+        print("Error type:", type(e).__name__)
+        print("Error message:", str(e))
+        return jsonify({
+            "error": str(e)
+        }), 500
+    
+@app.route("/chat-with-paper", methods=["POST"])
+def chat_with_paper():
+    print("\n=== NEW CHAT MESSAGE RECEIVED ===")
+    
+    data = request.get_json()
+    message = data.get("message", "")
+    paper_context = data.get("paper_context", {})
+    
+    # Combine all page text for context
+    full_text = "\n".join([page.get("text", "") for page in paper_context.get("pages", [])])
+    
+    prompt = f"""
+    You are an AI research assistant helping to answer questions about a research paper.
+    Use the following paper content to answer the user's question.
+    If you cannot answer based on the paper content, say so.
+    
+    Paper content:
+    {full_text}
+    
+    User question: {message}
+    
+    Please provide a clear and detailed answer based on the paper content.
+    """
+    
+    try:
+        print("Waiting for Gemini response...")
+        response = model.generate_content(prompt)
+        print("Response received from Gemini!")
+        
+        return jsonify({
+            "response": response.text
         })
     except Exception as e:
         print("\n=== ERROR OCCURRED ===")
