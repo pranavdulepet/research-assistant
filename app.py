@@ -8,7 +8,9 @@ import subprocess
 import json
 from dotenv import load_dotenv
 import google.generativeai as genai
-
+import shutil
+from pathlib import Path
+from datetime import datetime
 app = Flask(__name__)
 
 # Directories for uploads and extracted figures.
@@ -21,6 +23,10 @@ os.makedirs(app.config['UPLOAD_PDF'], exist_ok=True)
 CONVERSATIONS_FILE = "conversations.json"
 
 SPECIAL_THRESHOLD = 300  # threshold (in PDF points) for converting a figure to SVG
+
+# Update the configuration to use base directories
+app.config['STORAGE_BASE'] = 'static/uploads'
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 load_dotenv()
 
@@ -46,21 +52,34 @@ def index():
 def upload_pdf():
     if 'pdfFile' not in request.files:
         return "No file part in the request", 400
+    
     pdf_file = request.files['pdfFile']
     if pdf_file.filename == '':
         return "No selected file", 400
-
-    # Save the PDF with a unique filename.
-    unique_pdf_name = f"{uuid.uuid4()}.pdf"
-    pdf_path = os.path.join(app.config['UPLOAD_PDF'], unique_pdf_name)
+    
+    # Create unique ID and directory structure
+    upload_id = str(uuid.uuid4())
+    paths = create_upload_structure(upload_id)
+    
+    # Save the PDF
+    pdf_path = paths['pdf_path'] / 'original.pdf'
     pdf_file.save(pdf_path)
     
-    # Run extraction on the PDF.
-    extraction_data = extract_text_and_figures(pdf_path)
+    # Extract data
+    extraction_data = extract_text_and_figures(str(pdf_path), upload_id, paths['figures_path'])
     
-    # Return the PDF URL and extraction data.
+    # Save metadata
+    metadata = {
+        'upload_id': upload_id,
+        'original_filename': pdf_file.filename,
+        'upload_date': datetime.now().isoformat(),
+        'extraction_data': extraction_data
+    }
+    save_metadata(upload_id, metadata)
+    
     result = {
-        "pdf_url": f"/{pdf_path}",
+        "upload_id": upload_id,
+        "pdf_url": f"/static/uploads/{upload_id}/pdf/original.pdf",
         "extraction": extraction_data
     }
     return jsonify(result)
@@ -92,7 +111,7 @@ def fix_math_extraction(text):
     text = text.replace("D X", "DX")
     return text
 
-def extract_text_and_figures(pdf_path):
+def extract_text_and_figures(pdf_path, upload_id, figures_path):
     doc = fitz.open(pdf_path)
     result = {"pages": []}
     figure_ref_regex = re.compile(
@@ -126,24 +145,24 @@ def extract_text_and_figures(pdf_path):
             xref = info["xref"]
             bbox_tuple = info["bbox"]
             bbox = fitz.Rect(bbox_tuple)
-            bbox_center = ((bbox.x0 + bbox.x1) / 2.0, (bbox.y0 + bbox.y1) / 2.0)
             width = bbox.width
             height = bbox.height
+            bbox_center = ((bbox.x0 + bbox.x1) / 2.0, (bbox.y0 + bbox.y1) / 2.0)
 
             if width >= SPECIAL_THRESHOLD or height >= SPECIAL_THRESHOLD:
                 filename = f"{uuid.uuid4()}.svg"
-                output_svg_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                convert_region_to_svg(pdf_path, page_index + 1, (bbox.x0, bbox.y0, bbox.x1, bbox.y1), output_svg_path)
-                figure_url = f"/{os.path.join(app.config['UPLOAD_FOLDER'], filename)}"
+                output_svg_path = figures_path / filename
+                convert_region_to_svg(pdf_path, page_index + 1, (bbox.x0, bbox.y0, bbox.x1, bbox.y1), str(output_svg_path))
+                figure_url = f"/static/uploads/{upload_id}/figures/{filename}"
             else:
                 base_image = doc.extract_image(xref)
                 image_bytes = base_image["image"]
                 image_ext = base_image["ext"]
                 filename = f"{uuid.uuid4()}.{image_ext}"
-                image_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                image_path = figures_path / filename
                 with open(image_path, "wb") as f:
                     f.write(image_bytes)
-                figure_url = f"/{image_path}"
+                figure_url = f"/static/uploads/{upload_id}/figures/{filename}"
 
             figures_data.append({
                 "url": figure_url,
@@ -157,7 +176,7 @@ def extract_text_and_figures(pdf_path):
             best_image = None
             best_dist = float('inf')
             for img_obj in figures_data:
-                if img_obj["assigned_ref"] is not None:
+                if img_obj["assigned_ref"]:
                     continue
                 dx = ref_center[0] - img_obj["center"][0]
                 dy = ref_center[1] - img_obj["center"][1]
@@ -168,8 +187,8 @@ def extract_text_and_figures(pdf_path):
             if best_image:
                 best_image["assigned_ref"] = ref_obj["reference_text"]
 
-        ref_to_url_map = { img["assigned_ref"]: img["url"]
-                           for img in figures_data if img["assigned_ref"] }
+        ref_to_url_map = {img["assigned_ref"]: img["url"]
+                         for img in figures_data if img["assigned_ref"]}
 
         replaced_page_html = ""
         for block_text in processed_blocks:
@@ -202,24 +221,27 @@ def save_conversations_endpoint():
     save_conversations(convs)
     return jsonify({"status": "ok"})
 
-@app.route("/delete-static-files", methods=["POST"])
-def delete_static_files():
-    pdf_url = request.json.get('pdf_url')
-    figure_urls = request.json.get('figure_urls', [])
-    
-    # Delete PDF file
-    if pdf_url:
-        pdf_path = pdf_url.lstrip('/')
-        if os.path.exists(pdf_path):
-            os.remove(pdf_path)
-    
-    # Delete figure files
-    for figure_url in figure_urls:
-        figure_path = figure_url.lstrip('/')
-        if os.path.exists(figure_path):
-            os.remove(figure_path)
-    
-    return jsonify({"status": "ok"})
+@app.route("/delete-upload/<upload_id>", methods=["POST"])
+def delete_upload(upload_id):
+    try:
+        # Get the base path for this upload
+        base_path = Path(app.config['STORAGE_BASE']) / upload_id
+        
+        if base_path.exists():
+            # Remove the entire directory structure for this upload
+            shutil.rmtree(base_path)
+            
+            # Load and update conversations.json
+            conversations = load_conversations()
+            conversations = [c for c in conversations if c['id'] != upload_id]
+            save_conversations(conversations)
+            
+            return jsonify({"status": "ok"})
+        else:
+            return jsonify({"error": "Upload not found"}), 404
+            
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/verify-annotation", methods=["POST"])
 def verify_annotation():
@@ -373,6 +395,78 @@ def chat_with_paper():
         return jsonify({
             "error": str(e)
         }), 500
+
+def create_upload_structure(upload_id):
+    """Create directory structure for a new upload"""
+    base_path = Path(app.config['STORAGE_BASE']) / upload_id
+    pdf_path = base_path / 'pdf'
+    figures_path = base_path / 'figures'
+    chats_path = base_path / 'chats'
+    
+    # Create directories
+    pdf_path.mkdir(parents=True, exist_ok=True)
+    figures_path.mkdir(parents=True, exist_ok=True)
+    chats_path.mkdir(parents=True, exist_ok=True)
+    
+    return {
+        'base_path': base_path,
+        'pdf_path': pdf_path,
+        'figures_path': figures_path,
+        'chats_path': chats_path
+    }
+
+def save_metadata(upload_id, metadata):
+    """Save metadata for an upload"""
+    base_path = Path(app.config['STORAGE_BASE']) / upload_id
+    metadata_file = base_path / 'metadata.json'
+    with open(metadata_file, 'w') as f:
+        json.dump(metadata, f, indent=2)
+
+def get_metadata(upload_id):
+    """Get metadata for an upload"""
+    base_path = Path(app.config['STORAGE_BASE']) / upload_id
+    metadata_file = base_path / 'metadata.json'
+    if metadata_file.exists():
+        with open(metadata_file) as f:
+            return json.load(f)
+    return None
+
+def get_chat_history(upload_id):
+    """Get chat history for an upload"""
+    base_path = Path(app.config['STORAGE_BASE']) / upload_id / 'chats'
+    chat_file = base_path / 'history.json'
+    
+    # Create directory if it doesn't exist
+    base_path.mkdir(parents=True, exist_ok=True)
+    
+    if chat_file.exists():
+        with open(chat_file) as f:
+            return json.load(f)
+    # Initialize empty chat history file if it doesn't exist
+    save_chat_history(upload_id, [])
+    return []
+
+def save_chat_history(upload_id, chat_history):
+    """Save chat history for an upload"""
+    base_path = Path(app.config['STORAGE_BASE']) / upload_id / 'chats'
+    chat_file = base_path / 'history.json'
+    
+    # Ensure the chats directory exists
+    base_path.mkdir(parents=True, exist_ok=True)
+    
+    with open(chat_file, 'w') as f:
+        json.dump(chat_history, f, indent=2)
+
+@app.route("/chat-history/<upload_id>", methods=["GET"])
+def get_chat_history_endpoint(upload_id):
+    history = get_chat_history(upload_id)
+    return jsonify(history)
+
+@app.route("/chat-history/<upload_id>", methods=["POST"])
+def save_chat_history_endpoint(upload_id):
+    history = request.get_json()
+    save_chat_history(upload_id, history)
+    return jsonify({"status": "ok"})
 
 if __name__ == '__main__':
     print("Starting Flask server in debug mode...")

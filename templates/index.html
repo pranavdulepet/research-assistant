@@ -367,6 +367,7 @@
         let conversations = []; // Each conversation: { id, title, pdf_url, extraction, annotations }.
         let currentConversationId = null;
         let currentSelection = null;
+        let currentChatHistory = [];
 
         // Load persistent conversations from the server on page load.
         async function loadPersistentConversations() {
@@ -701,45 +702,31 @@
                 renderPDF(conv.pdf_url, currentAnnotations);
                 document.getElementById('extractionData').textContent = JSON.stringify(conv.extraction, null, 2);
                 renderAnnotations(conv.annotations);
+
+                // Load chat history for this conversation
+                loadChatHistory(id);
             }
         }
 
         function deleteConversation(id) {
             const conv = conversations.find(c => c.id === id);
             if (conv) {
-                // Collect all figure URLs from the extraction data
-                const figureUrls = [];
-                if (conv.extraction && conv.extraction.pages) {
-                    conv.extraction.pages.forEach(page => {
-                        if (page.figures) {
-                            page.figures.forEach(figure => {
-                                if (figure.url) {
-                                    figureUrls.push(figure.url);
-                                }
-                            });
-                        }
-                    });
-                }
-
-                // Delete static files
-                fetch('/delete-static-files', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        pdf_url: conv.pdf_url,
-                        figure_urls: figureUrls
-                    })
+                // Delete the upload directory and all its contents
+                fetch(`/delete-upload/${id}`, {
+                    method: 'POST'
                 });
-            }
 
-            conversations = conversations.filter(c => c.id !== id);
-            if (currentConversationId === id) {
-                document.getElementById('pdfViewer').innerHTML = "";
-                document.getElementById('extractionData').textContent = "";
-                document.getElementById('annotationList').innerHTML = "";
+                conversations = conversations.filter(c => c.id !== id);
+                if (currentConversationId === id) {
+                    document.getElementById('pdfViewer').innerHTML = "";
+                    document.getElementById('extractionData').textContent = "";
+                    document.getElementById('annotationList').innerHTML = "";
+                    document.getElementById('chatMessages').innerHTML = "";
+                    currentChatHistory = [];
+                }
+                renderSidebar();
+                persistConversations();
             }
-            renderSidebar();
-            persistConversations();
         }
 
         document.getElementById('uploadForm').addEventListener('submit', async function (e) {
@@ -757,7 +744,7 @@
                 }
                 const data = await response.json();
                 const conv = {
-                    id: uuidv4(),
+                    id: data.upload_id,
                     title: fileName,
                     pdf_url: data.pdf_url,
                     extraction: data.extraction,
@@ -875,16 +862,12 @@
         });
 
         async function sendChatMessage(message) {
-            const conv = conversations.find(c => c.id === currentConversationId);
-            if (!conv) {
+            if (!currentConversationId) {
                 alert('Please upload a paper first');
                 return;
             }
 
-            // Add user message to chat
             addMessageToChat('user', message);
-
-            // Show loading state
             showLoading('AI is thinking...');
 
             try {
@@ -895,7 +878,7 @@
                     },
                     body: JSON.stringify({
                         message: message,
-                        paper_context: conv.extraction
+                        paper_context: conversations.find(c => c.id === currentConversationId).extraction
                     })
                 });
 
@@ -904,7 +887,6 @@
                     throw new Error(result.error);
                 }
 
-                // Add AI response to chat
                 addMessageToChat('ai', result.response);
             } catch (error) {
                 console.error('Error:', error);
@@ -914,27 +896,18 @@
             }
         }
 
-        function addMessageToChat(type, message) {
+        function addMessageToChat(role, content, save = true) {
+            const chatMessages = document.getElementById('chatMessages');
             const messageDiv = document.createElement('div');
-            messageDiv.style.marginBottom = '10px';
-            messageDiv.style.padding = '8px';
-            messageDiv.style.borderRadius = '8px';
-            messageDiv.style.maxWidth = '80%';
-
-            if (type === 'user') {
-                messageDiv.style.backgroundColor = '#e3f2fd';
-                messageDiv.style.marginLeft = 'auto';
-            } else if (type === 'ai') {
-                messageDiv.style.backgroundColor = '#f5f5f5';
-                messageDiv.style.marginRight = 'auto';
-            } else {
-                messageDiv.style.backgroundColor = '#ffebee';
-                messageDiv.style.marginRight = 'auto';
-            }
-
-            messageDiv.textContent = message;
+            messageDiv.className = `chat-message ${role}-message`;
+            messageDiv.textContent = content;
             chatMessages.appendChild(messageDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
+
+            if (save) {
+                currentChatHistory.push({ role, content });
+                saveChatHistory();
+            }
         }
 
         sendChatButton.addEventListener('click', () => {
@@ -951,6 +924,44 @@
                 sendChatButton.click();
             }
         });
+
+        // Add new function to load chat history
+        async function loadChatHistory(conversationId) {
+            try {
+                const response = await fetch(`/chat-history/${conversationId}`);
+                currentChatHistory = await response.json();
+                renderChatHistory();
+            } catch (error) {
+                console.error('Error loading chat history:', error);
+                currentChatHistory = [];
+            }
+        }
+
+        // Add function to render chat history
+        function renderChatHistory() {
+            const chatMessages = document.getElementById('chatMessages');
+            chatMessages.innerHTML = '';
+            currentChatHistory.forEach(msg => {
+                addMessageToChat(msg.role, msg.content, false);
+            });
+        }
+
+        // Add function to save chat history
+        async function saveChatHistory() {
+            if (!currentConversationId) return;
+
+            try {
+                await fetch(`/chat-history/${currentConversationId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(currentChatHistory)
+                });
+            } catch (error) {
+                console.error('Error saving chat history:', error);
+            }
+        }
     </script>
 </body>
 
