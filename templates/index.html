@@ -4,25 +4,85 @@
 <head>
     <meta charset="UTF-8">
     <title>AI-Powered Research Assistant</title>
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
     <style>
         /* Overall layout */
         body {
             margin: 0;
-            font-family: sans-serif;
+            font-family: 'Lexend', sans-serif;
             display: flex;
             height: 100vh;
             overflow: hidden;
+            background-color: #e0dbdb;
+            color: #644536;
+            font-weight: 400;
+            text-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.1);
+        }
+
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6 {
+            font-family: 'Lexend', sans-serif;
+            font-weight: 600;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+        }
+
+        button {
+            font-family: 'Lexend', sans-serif;
+            font-weight: 500;
+            text-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.15);
+        }
+
+        input,
+        textarea,
+        select {
+            font-family: 'Lexend', sans-serif;
+            font-weight: 400;
+        }
+
+        #chatButton {
+            font-family: 'Lexend', sans-serif;
+            font-weight: 600;
+            text-shadow: 0 1px 2px rgba(51, 241, 189, 0.3);
+        }
+
+        .user-message,
+        .ai-message,
+        .system-message {
+            font-family: 'Lexend', sans-serif;
+            font-weight: 400;
+            text-shadow: 0 0.5px 1px rgba(100, 69, 54, 0.1);
+        }
+
+        #sidebar .conversation-item {
+            font-family: 'Lexend', sans-serif;
+            font-weight: 400;
+            text-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.1);
+        }
+
+        .annotation-item {
+            font-family: 'Lexend', sans-serif;
+            font-weight: 400;
+            text-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.1);
         }
 
         /* Sidebar styling */
         #sidebar {
             width: 250px;
-            background-color: #f7f7f7;
-            border-right: 1px solid #ccc;
+            background-color: #c4a381;
+            /* Light brown */
+            border-right: 0px;
+            /* Darker rose */
             padding: 10px;
             box-sizing: border-box;
             overflow-y: auto;
             transition: transform 0.3s ease;
+            border-top-right-radius: 12px;
+            border-bottom-right-radius: 12px;
         }
 
         #sidebar.closed {
@@ -40,13 +100,26 @@
             padding: 8px;
             border-bottom: 1px solid #ddd;
             cursor: pointer;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+            display: block;
+            background-color: rgba(255, 255, 255, 0.9);
+            margin-bottom: 8px;
+            border-radius: 8px;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
         }
 
         #sidebar .conversation-item:hover {
-            background-color: #eaeaea;
+            background-color: #bbd686;
+            /* Sage green */
+        }
+
+        #sidebar .conversation-item span {
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        #sidebar .conversation-item button {
+            float: right;
         }
 
         /* Main content area */
@@ -58,17 +131,23 @@
         }
 
         #topbar {
-            background-color: #fff;
-            padding: 10px;
+            background-color: #644536;
+            /* Dark brown */
+            padding: 12px;
             border-bottom: 1px solid #ccc;
             display: flex;
             align-items: center;
+            color: white;
+            border-bottom-left-radius: 12px;
+            border-bottom-right-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
         #topbar h1 {
             flex-grow: 1;
             margin: 0;
             font-size: 1.2em;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
         }
 
         /* Upload form in topbar */
@@ -98,32 +177,42 @@
 
         .annotation-marker {
             position: absolute;
-            background: rgba(255, 255, 0, 0.3);
+            background: rgba(187, 214, 134, 0.3);
+            /* Sage green with transparency */
             border: none;
             padding: 0;
             cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.2s ease;
         }
 
         .annotation-marker:hover {
-            background: rgba(255, 255, 0, 0.5);
+            background: rgba(187, 214, 134, 0.5);
+            /* Darker sage green */
         }
 
         /* Right panel: Extraction data & annotations list */
         #right-panel {
             width: 300px;
             padding: 20px;
-            border-left: 1px solid #ccc;
+            border-left: 1px solid #c4a381;
             overflow-y: auto;
+            border-top-left-radius: 12px;
+            border-bottom-left-radius: 12px;
+            position: relative;
+            padding-bottom: 80px;
         }
 
         #extractionData {
             white-space: pre-wrap;
-            background: #fafafa;
+            background: rgba(255, 255, 255, 0.5);
             border: 1px solid #ddd;
             padding: 5px;
             max-height: 300px;
             overflow-y: auto;
             margin-bottom: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
         }
 
         #annotationList {
@@ -132,17 +221,19 @@
         }
 
         .annotation-item {
-            padding: 5px;
-            border-bottom: 1px dashed #ccc;
-            font-size: 0.9em;
-            position: relative;
+            padding: 12px;
+            border-bottom: 1px solid #c4a381;
+            margin-bottom: 35px;
+            border-radius: 8px;
+            background-color: rgba(255, 255, 255, 0.5);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
         }
 
         .annotation-item button {
-            position: absolute;
-            right: 5px;
-            top: 5px;
+            margin: 5px 5px 5px 0;
             font-size: 0.8em;
+            padding: 3px 6px;
+            display: inline-block;
         }
 
         /* Annotation Modal styling */
@@ -155,6 +246,7 @@
             width: 100%;
             height: 100%;
             background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
         }
 
         #annotationModalContent {
@@ -165,11 +257,22 @@
             width: 400px;
             max-width: 90%;
             position: relative;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
 
         #annotationModalContent textarea {
             width: 100%;
             height: 80px;
+            border-radius: 8px;
+            border: 1px solid #c4a381;
+            padding: 8px;
+            transition: border 0.2s ease;
+        }
+
+        #annotationModalContent textarea:focus {
+            outline: none;
+            border-color: #33f1bd;
         }
 
         #annotationModalContent button {
@@ -191,9 +294,9 @@
             position: absolute;
             background: white;
             border: 1px solid #ccc;
-            border-radius: 4px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
-            padding: 5px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            padding: 8px;
             z-index: 1000;
         }
 
@@ -241,15 +344,19 @@
             justify-content: center;
             align-items: center;
             flex-direction: column;
+            backdrop-filter: blur(4px);
         }
 
         .loading-spinner {
-            border: 5px solid #f3f3f3;
+            border: 5px solid #c4a381;
+            /* Light brown */
             border-radius: 50%;
-            border-top: 5px solid #3498db;
+            border-top: 5px solid #33f1bd;
+            /* Bright teal */
             width: 50px;
             height: 50px;
             animation: spin 1s linear infinite;
+            box-shadow: 0 0 12px rgba(51, 241, 189, 0.3);
         }
 
         .loading-text {
@@ -266,6 +373,163 @@
             100% {
                 transform: rotate(360deg);
             }
+        }
+
+        button {
+            background-color: #b2675e;
+            /* Rose */
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        button:hover {
+            background-color: #644536;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+        }
+
+        #chatButton {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background-color: #33f1bd;
+            color: #644536;
+            border-radius: 24px;
+            padding: 12px 24px;
+            font-weight: bold;
+            box-shadow: 0 4px 12px rgba(51, 241, 189, 0.3);
+            z-index: 1000;
+            white-space: nowrap;
+        }
+
+        .user-message,
+        .ai-message,
+        .system-message {
+            padding: 12px 16px;
+            margin: 8px;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .user-message {
+            background-color: #bbd686;
+            /* Sage green */
+            color: #644536;
+            /* Dark brown */
+            border-bottom-right-radius: 4px;
+        }
+
+        .ai-message {
+            background-color: #c4a381;
+            /* Light brown */
+            color: #644536;
+            /* Dark brown */
+            border-bottom-left-radius: 4px;
+        }
+
+        .system-message {
+            background-color: #b2675e;
+            /* Rose */
+            color: white;
+            padding: 8px;
+            margin: 5px;
+            border-radius: 8px;
+            max-width: 80%;
+            align-self: center;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        }
+
+        /* Add this style */
+        #uploadPrompt {
+            display: none;
+            /* Hidden by default */
+            text-align: center;
+            padding: 20px;
+        }
+
+        .custom-file-upload {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 12px;
+            background-color: #b2675e;
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .custom-file-upload:hover {
+            background-color: #644536;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+        }
+
+        .custom-file-upload .material-icons {
+            margin-right: 8px;
+            font-size: 20px;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        #uploadForm {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        #uploadForm button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Add these styles */
+        .custom-file-upload.file-selected {
+            background-color: #bbd686;
+            /* Sage green to indicate selection */
+            color: #644536;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
+        }
+
+        .file-name-display {
+            font-size: 0.9em;
+            color: #ffffff;
+            margin-left: 10px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .file-name-display.visible {
+            opacity: 1;
+        }
+
+        /* Add this style */
+        .disclaimer {
+            position: fixed;
+            bottom: 5px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.7em;
+            color: #644536;
+            opacity: 0.7;
+            text-align: center;
+            font-family: 'Lexend', sans-serif;
+            text-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+            pointer-events: none;
         }
     </style>
     <!-- Include PDF.js -->
@@ -291,14 +555,24 @@
         <div id="topbar">
             <h1>AI-Powered Research Assistant</h1>
             <form id="uploadForm" method="POST" enctype="multipart/form-data" action="/upload">
-                <input type="file" name="pdfFile" accept=".pdf" required />
-                <button type="submit">Upload</button>
+                <label class="custom-file-upload">
+                    <input type="file" name="pdfFile" accept=".pdf" required />
+                    <i class="material-icons">description</i>
+                    <span class="label-text">Choose File</span>
+                </label>
+                <span class="file-name-display"></span>
+                <button type="submit">
+                    <i class="material-icons">upload</i>
+                    Upload
+                </button>
             </form>
         </div>
         <div id="main">
             <!-- Left panel: PDF viewer -->
             <div id="left-panel">
-                <h2>Paper Viewer</h2>
+                <div id="uploadPrompt">
+                    <h2>Upload a research paper to get started...</h2>
+                </div>
                 <div id="pdfViewer"></div>
             </div>
             <!-- Right panel: Extraction data and annotations list -->
@@ -307,6 +581,10 @@
                 <pre id="extractionData"></pre>
                 <h3>Annotations</h3>
                 <div id="annotationList"></div>
+                <button id="chatButton">
+                    <i class="material-icons">chat</i>
+                    Chat with Paper
+                </button>
             </div>
         </div>
     </div>
@@ -340,12 +618,8 @@
     </div>
 
     <!-- Chat Interface -->
-    <button id="chatButton" style="position: fixed; bottom: 20px; right: 20px; z-index: 1000; padding: 10px 20px;">
-        Chat with Paper
-    </button>
-
     <div id="chatInterface"
-        style="display: none; position: fixed; bottom: 20px; right: 20px; width: 350px; height: 500px; background: white; border: 1px solid #ccc; border-radius: 8px; z-index: 1000; box-shadow: 0 0 10px rgba(0,0,0,0.1);">
+        style="display: none; position: fixed; bottom: 20px; right: 20px; width: 350px; height: 500px; background: white; border: none; border-radius: 16px; z-index: 1000; box-shadow: 0 4px 24px rgba(0,0,0,0.15);">
         <div
             style="padding: 10px; border-bottom: 1px solid #ccc; display: flex; justify-content: space-between; align-items: center;">
             <h3 style="margin: 0;">Chat with Paper</h3>
@@ -357,6 +631,10 @@
                 placeholder="Ask a question about the paper..."></textarea>
             <button id="sendChatButton" style="width: 100%;">Send</button>
         </div>
+    </div>
+
+    <div class="disclaimer">
+        This tool can make mistakes. Check important info.
     </div>
 
     <script>
@@ -702,8 +980,7 @@
                 renderPDF(conv.pdf_url, currentAnnotations);
                 document.getElementById('extractionData').textContent = JSON.stringify(conv.extraction, null, 2);
                 renderAnnotations(conv.annotations);
-
-                // Load chat history for this conversation
+                document.getElementById('uploadPrompt').style.display = 'none';  // Hide prompt when PDF is loaded
                 loadChatHistory(id);
             }
         }
@@ -711,7 +988,6 @@
         function deleteConversation(id) {
             const conv = conversations.find(c => c.id === id);
             if (conv) {
-                // Delete the upload directory and all its contents
                 fetch(`/delete-upload/${id}`, {
                     method: 'POST'
                 });
@@ -723,6 +999,11 @@
                     document.getElementById('annotationList').innerHTML = "";
                     document.getElementById('chatMessages').innerHTML = "";
                     currentChatHistory = [];
+
+                    // Show upload prompt if no conversations left
+                    if (conversations.length === 0) {
+                        document.getElementById('uploadPrompt').style.display = 'block';
+                    }
                 }
                 renderSidebar();
                 persistConversations();
@@ -754,6 +1035,18 @@
                 renderSidebar();
                 loadConversation(conv.id);
                 persistConversations();
+
+                // Reset file input and UI state
+                this.reset();
+                const fileLabel = document.querySelector('.custom-file-upload');
+                const fileNameDisplay = document.querySelector('.file-name-display');
+                const labelText = fileLabel.querySelector('.label-text');
+
+                fileLabel.classList.remove('file-selected');
+                fileNameDisplay.classList.remove('visible');
+                fileNameDisplay.textContent = '';
+                labelText.textContent = 'Choose File';
+
             } catch (error) {
                 alert("Error uploading PDF: " + error.message);
             } finally {
@@ -782,6 +1075,9 @@
         // Load persistent conversations when the page loads.
         window.onload = function () {
             loadPersistentConversations();
+            if (conversations.length === 0) {
+                document.getElementById('uploadPrompt').style.display = 'block';  // Show prompt if no conversations
+            }
         }
 
         // Add new function to handle text selection
@@ -962,6 +1258,24 @@
                 console.error('Error saving chat history:', error);
             }
         }
+
+        // Add file selection handler
+        document.querySelector('input[type="file"]').addEventListener('change', function (e) {
+            const fileName = e.target.files[0]?.name;
+            const fileLabel = e.target.closest('.custom-file-upload');
+            const fileNameDisplay = document.querySelector('.file-name-display');
+
+            if (fileName) {
+                fileLabel.classList.add('file-selected');
+                fileNameDisplay.textContent = fileName;
+                fileNameDisplay.classList.add('visible');
+                fileLabel.querySelector('.label-text').textContent = 'File Selected';
+            } else {
+                fileLabel.classList.remove('file-selected');
+                fileNameDisplay.classList.remove('visible');
+                fileLabel.querySelector('.label-text').textContent = 'Choose File';
+            }
+        });
     </script>
 </body>
 
