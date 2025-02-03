@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>PDF Research Assistant with Annotations & Persistent Storage</title>
+    <title>AI-Powered Research Assistant</title>
     <style>
         /* Overall layout */
         body {
@@ -98,12 +98,14 @@
 
         .annotation-marker {
             position: absolute;
-            background: rgba(255, 255, 0, 0.7);
-            border: 1px solid #cc0;
-            padding: 2px;
-            font-size: 12px;
+            background: rgba(255, 255, 0, 0.3);
+            border: none;
+            padding: 0;
             cursor: pointer;
-            pointer-events: auto;
+        }
+
+        .annotation-marker:hover {
+            background: rgba(255, 255, 0, 0.5);
         }
 
         /* Right panel: Extraction data & annotations list */
@@ -182,17 +184,62 @@
             left: 10px;
             z-index: 1100;
         }
+
+        /* Selection popup menu */
+        #selectionPopup {
+            display: none;
+            position: absolute;
+            background: white;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            padding: 5px;
+            z-index: 1000;
+        }
+
+        /* Add styles for PDF.js text layer */
+        .textLayer {
+            position: absolute;
+            left: 0;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
+            opacity: 0.2;
+            line-height: 1.0;
+        }
+
+        .textLayer>span {
+            color: transparent;
+            position: absolute;
+            white-space: pre;
+            cursor: text;
+            transform-origin: 0% 0%;
+        }
+
+        .textLayer .highlight {
+            margin: -1px;
+            padding: 1px;
+            background-color: rgb(180, 0, 170);
+            border-radius: 4px;
+        }
+
+        .textLayer .highlight.selected {
+            background-color: rgb(0, 100, 0);
+        }
     </style>
     <!-- Include PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js"></script>
+    <!-- Add PDF.js text layer CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf_viewer.css">
 </head>
 
 <body>
     <!-- Sidebar for conversation list -->
     <div id="sidebar">
         <div class="sidebar-header">
-            <span>PDF Uploads</span>
+            <span>Uploads</span>
             <button id="closeSidebar">X</button>
         </div>
         <div id="conversationList"></div>
@@ -202,7 +249,7 @@
     <!-- Main Content Area -->
     <div id="content">
         <div id="topbar">
-            <h1>PDF Research Assistant</h1>
+            <h1>AI-Powered Research Assistant</h1>
             <form id="uploadForm" method="POST" enctype="multipart/form-data" action="/upload">
                 <input type="file" name="pdfFile" accept=".pdf" required />
                 <button type="submit">Upload</button>
@@ -211,12 +258,12 @@
         <div id="main">
             <!-- Left panel: PDF viewer -->
             <div id="left-panel">
-                <h2>PDF Viewer</h2>
+                <h2>Paper Viewer</h2>
                 <div id="pdfViewer"></div>
             </div>
             <!-- Right panel: Extraction data and annotations list -->
             <div id="right-panel">
-                <h2>Extraction Data (RAG)</h2>
+                <h2>Extracted Data</h2>
                 <pre id="extractionData"></pre>
                 <h3>Annotations</h3>
                 <div id="annotationList"></div>
@@ -242,6 +289,11 @@
         </div>
     </div>
 
+    <!-- Add selection popup menu -->
+    <div id="selectionPopup">
+        <button id="addAnnotationBtn">Add annotation</button>
+    </div>
+
     <script>
         // Global variables for PDF rendering and conversation management.
         let pdfDoc = null;
@@ -249,6 +301,7 @@
         let currentPdfUrl = "";
         let conversations = []; // Each conversation: { id, title, pdf_url, extraction, annotations }.
         let currentConversationId = null;
+        let currentSelection = null;
 
         // Load persistent conversations from the server on page load.
         async function loadPersistentConversations() {
@@ -275,6 +328,7 @@
             const viewer = document.getElementById('pdfViewer');
             viewer.innerHTML = "";
             pdfDoc = await pdfjsLib.getDocument(url).promise;
+
             for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
                 const page = await pdfDoc.getPage(pageNum);
                 const scale = 1.5;
@@ -284,34 +338,41 @@
                 pageDiv.className = 'pdf-page';
                 pageDiv.style.width = viewport.width + "px";
                 pageDiv.style.height = viewport.height + "px";
+                pageDiv.style.position = "relative";
                 pageDiv.dataset.pageNumber = pageNum;
 
+                // Canvas layer
                 const canvas = document.createElement('canvas');
                 canvas.width = viewport.width;
                 canvas.height = viewport.height;
                 pageDiv.appendChild(canvas);
+
+                // Text layer
+                const textLayerDiv = document.createElement('div');
+                textLayerDiv.className = 'textLayer';
+                textLayerDiv.style.width = viewport.width + "px";
+                textLayerDiv.style.height = viewport.height + "px";
+                pageDiv.appendChild(textLayerDiv);
+
                 viewer.appendChild(pageDiv);
 
+                // Render page content
                 const context = canvas.getContext('2d');
                 await page.render({ canvasContext: context, viewport: viewport }).promise;
 
-                // Overlay to capture annotation events.
-                const overlay = document.createElement('div');
-                overlay.style.position = "absolute";
-                overlay.style.top = "0";
-                overlay.style.left = "0";
-                overlay.style.width = viewport.width + "px";
-                overlay.style.height = viewport.height + "px";
-                overlay.style.cursor = "pointer";
-                overlay.addEventListener('dblclick', function (event) {
-                    const rect = overlay.getBoundingClientRect();
-                    const x = event.clientX - rect.left;
-                    const y = event.clientY - rect.top;
-                    openAnnotationModal(pageNum, x, y);
+                // Render text layer
+                const textContent = await page.getTextContent();
+                pdfjsLib.renderTextLayer({
+                    textContent: textContent,
+                    container: textLayerDiv,
+                    viewport: viewport,
+                    textDivs: []
                 });
-                pageDiv.appendChild(overlay);
 
-                // Render existing annotation markers.
+                // Add event listener to text layer for selection
+                textLayerDiv.addEventListener('mouseup', handleTextSelection);
+
+                // Render existing annotation markers
                 if (annotations) {
                     annotations.filter(a => a.page === pageNum).forEach(a => {
                         addAnnotationMarker(pageDiv, a);
@@ -337,8 +398,9 @@
             modal.dataset.page = page;
             modal.dataset.x = x;
             modal.dataset.y = y;
-            document.getElementById('annotationPreview').textContent =
-                "Page " + page + " at (" + Math.round(x) + ", " + Math.round(y) + ")";
+            document.getElementById('annotationPreview').innerHTML =
+                `<strong>Selected text:</strong> "${currentSelection.text}"<br>` +
+                `Page ${page} at (${Math.round(x)}, ${Math.round(y)})`;
         }
 
         // Cancel annotation modal.
@@ -359,7 +421,15 @@
             const page = parseInt(modal.dataset.page);
             const x = parseFloat(modal.dataset.x);
             const y = parseFloat(modal.dataset.y);
-            const annotation = { id: uuidv4(), page, x, y, comment, type: annotationType };
+            const annotation = {
+                id: uuidv4(),
+                page,
+                x,
+                y,
+                comment,
+                type: annotationType,
+                selectedText: currentSelection.text
+            };
             currentAnnotations.push(annotation);
             if (currentConversationId) {
                 const conv = conversations.find(c => c.id === currentConversationId);
@@ -367,9 +437,10 @@
                     conv.annotations.push(annotation);
                     renderAnnotations(conv.annotations);
                     persistConversations();
+                    // Re-render PDF with updated annotations
+                    renderPDF(currentPdfUrl, currentAnnotations);
                 }
             }
-            renderPDF(currentPdfUrl, currentAnnotations);
             modal.style.display = "none";
             document.getElementById('annotationText').value = "";
         });
@@ -381,35 +452,145 @@
             annotations.forEach(ann => {
                 const div = document.createElement('div');
                 div.className = 'annotation-item';
-                div.innerHTML = `<strong>Page ${ann.page}</strong>: (${Math.round(ann.x)}, ${Math.round(ann.y)}) - ${ann.comment} <br>
-                         <em>Type:</em> ${ann.type}`;
-                if (ann.type === "note") {
-                    div.innerHTML += ` <button onclick="askAIVerify('${ann.id}');">Ask AI to verify</button>`;
-                } else if (ann.type === "question") {
-                    div.innerHTML += ` <button onclick="askAIAnswer('${ann.id}');">Ask AI to answer</button>`;
-                }
+                div.innerHTML = `
+                    <strong>Page ${ann.page}</strong><br>
+                    <em>Selected text:</em> "${ann.selectedText}"<br>
+                    <em>Comment:</em> ${ann.comment}<br>
+                    <em>Type:</em> ${ann.type}`;
+                div.innerHTML += ` <button onclick="askAIVerify('${ann.id}');">Ask AI to verify</button>`;
+                div.innerHTML += ` <button onclick="askAIAnswer('${ann.id}');">Ask AI to answer</button>`;
                 div.innerHTML += ` <button onclick="deleteAnnotation('${ann.id}');">Delete</button>`;
                 list.appendChild(div);
             });
         }
 
-        // Placeholder for AI actions.
-        function askAIVerify(annotationId) {
+        // AI verification function
+        async function askAIVerify(annotationId) {
+            console.log("askAIVerify called with id:", annotationId);
             const conv = conversations.find(c => c.id === currentConversationId);
-            if (!conv) return;
+            if (!conv) {
+                console.error("No conversation found");
+                return;
+            }
             const ann = conv.annotations.find(a => a.id === annotationId);
-            if (!ann) return;
-            alert("AI Verification for: " + ann.comment);
-            // Insert call to AI service here.
+            if (!ann) {
+                console.error("No annotation found");
+                return;
+            }
+
+            try {
+                // Get figures from the current page and surrounding pages
+                const pageNum = ann.page;
+                const relevantFigures = conv.extraction.pages
+                    .filter(p => Math.abs(p.page_number - pageNum) <= 1)
+                    .flatMap(p => p.figures.map(f => ({ ...f, page_number: p.page_number })));
+
+                const requestData = {
+                    selectedText: ann.selectedText,
+                    comment: ann.comment,
+                    context: conv.extraction.pages[ann.page - 1].text,
+                    figures: relevantFigures
+                };
+
+                console.log("Sending verification request with data:", requestData);
+
+                const response = await fetch('/verify-annotation', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                console.log("Got response:", response);
+                const result = await response.json();
+                console.log("Parsed result:", result);
+
+                if (result.error) {
+                    console.error("Error from server:", result.error);
+                    alert('Error: ' + result.error);
+                    return;
+                }
+
+                // Create and show modal with AI response
+                const modalHtml = `
+                    <div class="ai-response-modal" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                        background: white; padding: 20px; max-width: 80%; max-height: 80%; overflow-y: auto;
+                        box-shadow: 0 0 10px rgba(0,0,0,0.5); z-index: 1000; border-radius: 5px;">
+                        <h3>AI Verification Result</h3>
+                        <div style="white-space: pre-wrap;">${result.explanation}</div>
+                        <button onclick="this.parentElement.remove()" style="margin-top: 10px;">Close</button>
+                    </div>
+                `;
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to verify annotation');
+            }
         }
 
-        function askAIAnswer(annotationId) {
+        async function askAIAnswer(annotationId) {
+            console.log("askAIAnswer called with id:", annotationId);
             const conv = conversations.find(c => c.id === currentConversationId);
-            if (!conv) return;
+            if (!conv) {
+                console.error("No conversation found");
+                return;
+            }
             const ann = conv.annotations.find(a => a.id === annotationId);
-            if (!ann) return;
-            alert("AI Answer for: " + ann.comment);
-            // Insert call to AI service here.
+            if (!ann) {
+                console.error("No annotation found");
+                return;
+            }
+
+            try {
+                // Get figures from the current page and surrounding pages
+                const pageNum = ann.page;
+                const relevantFigures = conv.extraction.pages
+                    .filter(p => Math.abs(p.page_number - pageNum) <= 1)
+                    .flatMap(p => p.figures.map(f => ({ ...f, page_number: p.page_number })));
+
+                const requestData = {
+                    selectedText: ann.selectedText,
+                    question: ann.comment,
+                    context: conv.extraction.pages[ann.page - 1].text,
+                    figures: relevantFigures
+                };
+
+                console.log("Sending answer request with data:", requestData);
+
+                const response = await fetch('/answer-question', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                console.log("Got response:", response);
+                const result = await response.json();
+                console.log("Parsed result:", result);
+
+                if (result.error) {
+                    console.error("Error from server:", result.error);
+                    alert('Error: ' + result.error);
+                    return;
+                }
+
+                // Create and show modal with AI response
+                const modalHtml = `
+                    <div class="ai-response-modal" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                        background: white; padding: 20px; max-width: 80%; max-height: 80%; overflow-y: auto;
+                        box-shadow: 0 0 10px rgba(0,0,0,0.5); z-index: 1000; border-radius: 5px;">
+                        <h3>AI Answer</h3>
+                        <div style="white-space: pre-wrap;">${result.answer}</div>
+                        <button onclick="this.parentElement.remove()" style="margin-top: 10px;">Close</button>
+                    </div>
+                `;
+                document.body.insertAdjacentHTML('beforeend', modalHtml);
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to get AI answer');
+            }
         }
 
         // Delete an annotation.
@@ -452,6 +633,33 @@
         }
 
         function deleteConversation(id) {
+            const conv = conversations.find(c => c.id === id);
+            if (conv) {
+                // Collect all figure URLs from the extraction data
+                const figureUrls = [];
+                if (conv.extraction && conv.extraction.pages) {
+                    conv.extraction.pages.forEach(page => {
+                        if (page.figures) {
+                            page.figures.forEach(figure => {
+                                if (figure.url) {
+                                    figureUrls.push(figure.url);
+                                }
+                            });
+                        }
+                    });
+                }
+
+                // Delete static files
+                fetch('/delete-static-files', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        pdf_url: conv.pdf_url,
+                        figure_urls: figureUrls
+                    })
+                });
+            }
+
             conversations = conversations.filter(c => c.id !== id);
             if (currentConversationId === id) {
                 document.getElementById('pdfViewer').innerHTML = "";
@@ -509,6 +717,54 @@
         window.onload = function () {
             loadPersistentConversations();
         }
+
+        // Add new function to handle text selection
+        function handleTextSelection(event) {
+            const selection = window.getSelection();
+            const selectedText = selection.toString().trim();
+
+            if (!selectedText) {
+                document.getElementById('selectionPopup').style.display = 'none';
+                return;
+            }
+
+            const range = selection.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            const popup = document.getElementById('selectionPopup');
+
+            popup.style.display = 'block';
+            popup.style.left = `${rect.left + window.scrollX}px`;
+            popup.style.top = `${rect.bottom + window.scrollY}px`;
+
+            const pageDiv = event.target.closest('.pdf-page');
+            const pageRect = pageDiv.getBoundingClientRect();
+
+            currentSelection = {
+                text: selectedText,
+                page: parseInt(pageDiv.dataset.pageNumber),
+                x: event.clientX - pageRect.left,
+                y: event.clientY - pageRect.top
+            };
+        }
+
+        // Add selection popup button handler
+        document.getElementById('addAnnotationBtn').addEventListener('click', function () {
+            if (currentSelection) {
+                openAnnotationModal(
+                    currentSelection.page,
+                    currentSelection.x,
+                    currentSelection.y
+                );
+                document.getElementById('selectionPopup').style.display = 'none';
+            }
+        });
+
+        // Close selection popup when clicking outside
+        document.addEventListener('mousedown', function (event) {
+            if (!event.target.closest('#selectionPopup')) {
+                document.getElementById('selectionPopup').style.display = 'none';
+            }
+        });
     </script>
 </body>
 

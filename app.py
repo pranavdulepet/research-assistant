@@ -6,6 +6,8 @@ import uuid
 import math
 import subprocess
 import json
+from dotenv import load_dotenv
+import google.generativeai as genai
 
 app = Flask(__name__)
 
@@ -19,6 +21,12 @@ os.makedirs(app.config['UPLOAD_PDF'], exist_ok=True)
 CONVERSATIONS_FILE = "conversations.json"
 
 SPECIAL_THRESHOLD = 300  # threshold (in PDF points) for converting a figure to SVG
+
+load_dotenv()
+
+# Configure Google Gemini
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+model = genai.GenerativeModel("gemini-pro")
 
 def load_conversations():
     if os.path.exists(CONVERSATIONS_FILE):
@@ -194,5 +202,138 @@ def save_conversations_endpoint():
     save_conversations(convs)
     return jsonify({"status": "ok"})
 
+@app.route("/delete-static-files", methods=["POST"])
+def delete_static_files():
+    pdf_url = request.json.get('pdf_url')
+    figure_urls = request.json.get('figure_urls', [])
+    
+    # Delete PDF file
+    if pdf_url:
+        pdf_path = pdf_url.lstrip('/')
+        if os.path.exists(pdf_path):
+            os.remove(pdf_path)
+    
+    # Delete figure files
+    for figure_url in figure_urls:
+        figure_path = figure_url.lstrip('/')
+        if os.path.exists(figure_path):
+            os.remove(figure_path)
+    
+    return jsonify({"status": "ok"})
+
+@app.route("/verify-annotation", methods=["POST"])
+def verify_annotation():
+    print("\n=== NEW VERIFICATION REQUEST RECEIVED ===")
+    
+    data = request.get_json()
+    print("Request data received:", bool(data))
+    
+    annotation_text = data.get("selectedText", "")
+    comment = data.get("comment", "")
+    context = data.get("context", "")
+    figures = data.get("figures", [])
+    
+    print(f"Processing request for annotation: '{annotation_text[:50]}...'")
+    print(f"Number of figures in context: {len(figures)}")
+    
+    # Build context with figures
+    figures_context = "\n".join([f"Figure {fig['ref']}: Located at page {fig['page_number']}" 
+                                for fig in figures if fig.get('ref')])
+    
+    prompt = f"""
+    As an AI research assistant, please verify the following annotation in the context of this research paper:
+    
+    Selected Text: "{annotation_text}"
+    User's Comment/Claim: "{comment}"
+    
+    Context from the paper:
+    {context}
+    
+    Available Figures in Context:
+    {figures_context}
+    
+    Please:
+    1. Verify if the comment/claim is accurate based on the selected text, context, and available figures
+    2. Provide evidence supporting or contradicting the claim
+    3. Suggest any corrections if needed
+    
+    Format your response in clear sections.
+    """
+    
+    print("\n=== SENDING REQUEST TO GEMINI ===")
+    try:
+        print("Waiting for Gemini response...")
+        response = model.generate_content(prompt)
+        print("Response received from Gemini!")
+        print("\n=== AI RESPONSE ===")
+        print(response.text)
+        print("\n=== END OF RESPONSE ===")
+        
+        return jsonify({
+            "verified": True,
+            "explanation": response.text
+        })
+    except Exception as e:
+        print("\n=== ERROR OCCURRED ===")
+        print("Error type:", type(e).__name__)
+        print("Error message:", str(e))
+        print("=== END OF ERROR ===\n")
+        return jsonify({
+            "verified": False,
+            "error": str(e)
+        }), 500
+
+@app.route("/answer-question", methods=["POST"])
+def answer_question():
+    print("\n=== NEW ANSWER REQUEST RECEIVED ===")
+    
+    data = request.get_json()
+    print("Request data received:", bool(data))
+    
+    question = data.get("question", "")
+    context = data.get("context", "")
+    selected_text = data.get("selectedText", "")
+    figures = data.get("figures", [])
+    
+    print(f"Processing answer for question: '{question}'")
+    print(f"Number of figures in context: {len(figures)}")
+    
+    # Build context with figures
+    figures_context = "\n".join([f"Figure {fig['ref']}: Located at page {fig['page_number']}" 
+                               for fig in figures if fig.get('ref')])
+    
+    prompt = f"""
+    As an AI research assistant, please answer the following question about this research paper:
+    
+    Question: "{question}"
+    
+    Selected Text: "{selected_text}"
+    
+    Context from the paper:
+    {context}
+    
+    Available Figures in Context:
+    {figures_context}
+    
+    Please provide a clear and detailed answer based on the provided context and figures.
+    """
+    
+    try:
+        print("Waiting for Gemini response...")
+        response = model.generate_content(prompt)
+        print("Response received from Gemini!")
+        
+        return jsonify({
+            "answer": response.text
+        })
+    except Exception as e:
+        print("\n=== ERROR OCCURRED ===")
+        print("Error type:", type(e).__name__)
+        print("Error message:", str(e))
+        return jsonify({
+            "error": str(e)
+        }), 500
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    print("Starting Flask server in debug mode...")
+    app.run(debug=True, port=5000)
