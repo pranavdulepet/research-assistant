@@ -48,7 +48,7 @@
         #chatButton {
             position: fixed;
             bottom: 20px;
-            right: 70px;
+            right: 60px;
             display: inline-flex;
             align-items: center;
             gap: 8px;
@@ -153,7 +153,7 @@
 
         #topbar {
             background-color: #644536;
-            padding: 12px;
+            padding: 20px;
             border-bottom: 1px solid #ccc;
             display: flex;
             align-items: center;
@@ -620,12 +620,56 @@
         .annotation-item.question {
             border-left: 3px solid #B2675E;
         }
+
+        .ai-response-modal {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            max-width: 80%;
+            max-height: 80%;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .ai-response-modal h3 {
+            margin-top: 0;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .ai-response-modal .content {
+            overflow-y: auto;
+            max-height: 60vh;
+            padding: 10px;
+            margin: 10px 0;
+            background: #f8f9fa;
+            border-radius: 8px;
+            white-space: pre-wrap;
+            font-family: 'Lexend', sans-serif;
+            line-height: 1.5;
+            color: #333;
+        }
+
+        .ai-response-modal .actions {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
     </style>
     <!-- Include PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js"></script>
     <!-- Add PDF.js text layer CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf_viewer.css">
+    <!-- Add marked.js library in the head section -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 
 <body>
@@ -894,7 +938,7 @@
             list.innerHTML = '';
             annotations.forEach(ann => {
                 const div = document.createElement('div');
-                div.className = `annotation-item ${ann.type}`; // Add type class
+                div.className = `annotation-item ${ann.type}`;
 
                 // Define buttons based on annotation type
                 let actionButtons = `
@@ -904,23 +948,35 @@
                     </button>
                 `;
 
-                // Add verify button only for notes
+                // Add verify button and response viewer for notes
                 if (ann.type === 'note') {
                     actionButtons += `
                         <button onclick="askAIVerify('${ann.id}');">
                             <i class="material-icons">verified</i>
-                            Verify
+                            ${ann.aiVerification ? 'Regenerate' : 'Verify'}
                         </button>
+                        ${ann.aiVerification ? `
+                            <button onclick="viewAIResponse('${ann.id}', 'verification')">
+                                <i class="material-icons">visibility</i>
+                                View Verification
+                            </button>
+                        ` : ''}
                     `;
                 }
 
-                // Add answer button only for questions
+                // Add answer button and response viewer for questions
                 if (ann.type === 'question') {
                     actionButtons += `
                         <button onclick="askAIAnswer('${ann.id}');">
                             <i class="material-icons">question_answer</i>
-                            Answer
+                            ${ann.aiAnswer ? 'Regenerate' : 'Answer'}
                         </button>
+                        ${ann.aiAnswer ? `
+                            <button onclick="viewAIResponse('${ann.id}', 'answer')">
+                                <i class="material-icons">visibility</i>
+                                View Answer
+                            </button>
+                        ` : ''}
                     `;
                 }
 
@@ -943,6 +999,7 @@
                 list.appendChild(div);
             });
         }
+
         // AI verification function
         async function askAIVerify(annotationId) {
             showLoading('AI is verifying the annotation...');
@@ -993,17 +1050,13 @@
                     return;
                 }
 
-                // Create and show modal with AI response
-                const modalHtml = `
-                    <div class="ai-response-modal" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                        background: white; padding: 20px; max-width: 80%; max-height: 80%; overflow-y: auto;
-                        box-shadow: 0 0 10px rgba(0,0,0,0.5); z-index: 1000; border-radius: 5px;">
-                        <h3>AI Verification Result</h3>
-                        <div style="white-space: pre-wrap;">${result.explanation}</div>
-                        <button onclick="this.parentElement.remove()" style="margin-top: 10px;">Close</button>
-                    </div>
-                `;
-                document.body.insertAdjacentHTML('beforeend', modalHtml);
+                // Store the verification result
+                conv.annotations.find(a => a.id === annotationId).aiVerification = result.explanation;
+                persistConversations();
+                renderAnnotations(conv.annotations);
+
+                // Show the response
+                viewAIResponse(annotationId, 'verification');
             } catch (error) {
                 console.error('Error:', error);
                 alert('Failed to verify annotation');
@@ -1061,17 +1114,13 @@
                     return;
                 }
 
-                // Create and show modal with AI response
-                const modalHtml = `
-                    <div class="ai-response-modal" style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                        background: white; padding: 20px; max-width: 80%; max-height: 80%; overflow-y: auto;
-                        box-shadow: 0 0 10px rgba(0,0,0,0.5); z-index: 1000; border-radius: 5px;">
-                        <h3>AI Answer</h3>
-                        <div style="white-space: pre-wrap;">${result.answer}</div>
-                        <button onclick="this.parentElement.remove()" style="margin-top: 10px;">Close</button>
-                    </div>
-                `;
-                document.body.insertAdjacentHTML('beforeend', modalHtml);
+                // Store the answer
+                conv.annotations.find(a => a.id === annotationId).aiAnswer = result.answer;
+                persistConversations();
+                renderAnnotations(conv.annotations);
+
+                // Show the response
+                viewAIResponse(annotationId, 'answer');
             } catch (error) {
                 console.error('Error:', error);
                 alert('Failed to get AI answer');
@@ -1337,7 +1386,14 @@
             const chatMessages = document.getElementById('chatMessages');
             const messageDiv = document.createElement('div');
             messageDiv.className = `chat-message ${role}-message`;
-            messageDiv.textContent = content;
+
+            // Use marked to parse markdown for AI messages
+            if (role === 'ai') {
+                messageDiv.innerHTML = marked.parse(content);
+            } else {
+                messageDiv.textContent = content;
+            }
+
             chatMessages.appendChild(messageDiv);
             chatMessages.scrollTop = chatMessages.scrollHeight;
 
@@ -1485,6 +1541,31 @@
         // Update the existing functions to include the selected provider
         function getSelectedProvider() {
             return document.getElementById('aiProvider').value;
+        }
+
+        // Add new function to view AI responses
+        function viewAIResponse(annotationId, type) {
+            const conv = conversations.find(c => c.id === currentConversationId);
+            const ann = conv.annotations.find(a => a.id === annotationId);
+
+            if (!ann) return;
+
+            const response = type === 'verification' ? ann.aiVerification : ann.aiAnswer;
+            if (!response) return;
+
+            const modalHtml = `
+                <div class="ai-response-modal">
+                    <h3>AI ${type === 'verification' ? 'Verification' : 'Answer'}</h3>
+                    <div class="content">${marked.parse(response)}</div>
+                    <div class="actions">
+                        <button onclick="this.closest('.ai-response-modal').remove()">Close</button>
+                        <button onclick="if(confirm('Regenerate response?')) { ${type === 'verification' ? 'askAIVerify' : 'askAIAnswer'}('${annotationId}'); this.closest('.ai-response-modal').remove(); }">
+                            Regenerate
+                        </button>
+                    </div>
+                </div>
+            `;
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
         }
     </script>
 </body>

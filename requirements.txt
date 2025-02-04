@@ -1,6 +1,5 @@
-flask 
-pdfplumber
-PyMuPDF
-google-generativeai>=0.1.0
-python-dotenv
-openai
+flask==3.0.0
+PyMuPDF==1.23.8
+google-generativeai==0.3.2
+python-dotenv==1.0.0
+openai==1.12.0

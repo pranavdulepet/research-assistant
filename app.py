@@ -405,7 +405,7 @@ def answer_question():
         return jsonify({"error": str(e)}), 500
     
 @app.route("/chat-with-paper", methods=["POST"])
-async def chat_with_paper():
+def chat_with_paper():
     data = request.get_json()
     provider = data.get("provider")
     
@@ -435,7 +435,9 @@ async def chat_with_paper():
     """
     
     try:
-        response = await get_ai_response(provider, prompt)
+        # Use asyncio.run() to handle the async call in sync context
+        import asyncio
+        response = asyncio.run(get_ai_response(provider, prompt))
         return jsonify({
             "response": response
         })
