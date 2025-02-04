@@ -11,6 +11,8 @@ import google.generativeai as genai
 import shutil
 from pathlib import Path
 from datetime import datetime
+import openai
+
 app = Flask(__name__)
 
 # Directories for uploads and extracted figures.
@@ -30,9 +32,42 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 load_dotenv()
 
-# Configure Google Gemini
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-model = genai.GenerativeModel("gemini-pro")
+# After load_dotenv(), add these debug prints:
+print("\nEnvironment Variables Check:")
+print(f"GEMINI_API_KEY present: {bool(os.getenv('GEMINI_API_KEY'))}")
+print(f"OPENAI_API_KEY present: {bool(os.getenv('OPENAI_API_KEY'))}")
+
+# Configure AI Providers
+AI_PROVIDERS = {
+    'gemini': {
+        'id': 'gemini',
+        'name': 'Google Gemini',
+        'enabled': bool(os.getenv("GEMINI_API_KEY")),
+        'api_key': os.getenv("GEMINI_API_KEY")
+    },
+    'openai': {
+        'id': 'openai',
+        'name': 'OpenAI GPT-4',
+        'enabled': bool(os.getenv("OPENAI_API_KEY")),
+        'api_key': os.getenv("OPENAI_API_KEY")
+    },
+    'deepseek': {
+        'id': 'deepseek',
+        'name': 'DeepSeek (Coming Soon)',
+        'enabled': False,
+        'api_key': None
+    }
+}
+
+# Initialize AI clients
+if AI_PROVIDERS['gemini']['enabled']:
+    genai.configure(api_key=AI_PROVIDERS['gemini']['api_key'])
+    gemini_model = genai.GenerativeModel('gemini-pro')
+    print("Gemini model initialized successfully")
+
+if AI_PROVIDERS['openai']['enabled']:
+    openai_client = openai.OpenAI(api_key=AI_PROVIDERS['openai']['api_key'])
+    print("OpenAI client initialized successfully")
 
 def load_conversations():
     if os.path.exists(CONVERSATIONS_FILE):
@@ -245,10 +280,14 @@ def delete_upload(upload_id):
 
 @app.route("/verify-annotation", methods=["POST"])
 def verify_annotation():
-    print("\n=== NEW VERIFICATION REQUEST RECEIVED ===")
-    
     data = request.get_json()
-    print("Request data received:", bool(data))
+    provider = data.get("provider")  # Get provider from request
+    
+    if not provider or provider not in AI_PROVIDERS:
+        return jsonify({"error": "Invalid AI provider"}), 400
+    
+    if not AI_PROVIDERS[provider]['enabled']:
+        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
     
     annotation_text = data.get("selectedText", "")
     comment = data.get("comment", "")
@@ -263,7 +302,7 @@ def verify_annotation():
                                 for fig in figures if fig.get('ref')])
     
     prompt = f"""
-    As an AI research assistant, please verify the following annotation in the context of this research paper:
+    As an AI research assistant, please verify the following annotation based on the Context from the paper, the Available Figures in Context, and your general knowledge:
     
     Selected Text: "{annotation_text}"
     User's Comment/Claim: "{comment}"
@@ -275,7 +314,7 @@ def verify_annotation():
     {figures_context}
     
     Please:
-    1. Verify if the comment/claim is accurate based on the selected text, context, and available figures
+    1. Verify if the comment/claim the User made about the selected text is accurate based on the context and available figures
     2. Provide evidence supporting or contradicting the claim
     3. Suggest any corrections if needed
     
@@ -285,15 +324,17 @@ def verify_annotation():
     print("\n=== SENDING REQUEST TO GEMINI ===")
     try:
         print("Waiting for Gemini response...")
-        response = model.generate_content(prompt)
+        # Use asyncio.run() to handle the async call in sync context
+        import asyncio
+        response = asyncio.run(get_ai_response(provider, prompt))
         print("Response received from Gemini!")
         print("\n=== AI RESPONSE ===")
-        print(response.text)
+        print(response)
         print("\n=== END OF RESPONSE ===")
         
         return jsonify({
             "verified": True,
-            "explanation": response.text
+            "explanation": response
         })
     except Exception as e:
         print("\n=== ERROR OCCURRED ===")
@@ -307,60 +348,73 @@ def verify_annotation():
 
 @app.route("/answer-question", methods=["POST"])
 def answer_question():
-    print("\n=== NEW ANSWER REQUEST RECEIVED ===")
-    
-    data = request.get_json()
-    print("Request data received:", bool(data))
-    
-    question = data.get("question", "")
-    context = data.get("context", "")
-    selected_text = data.get("selectedText", "")
-    figures = data.get("figures", [])
-    
-    print(f"Processing answer for question: '{question}'")
-    print(f"Number of figures in context: {len(figures)}")
-    
-    # Build context with figures
-    figures_context = "\n".join([f"Figure {fig['ref']}: Located at page {fig['page_number']}" 
-                               for fig in figures if fig.get('ref')])
-    
-    prompt = f"""
-    As an AI research assistant, please answer the following question about this research paper:
-    
-    Question: "{question}"
-    
-    Selected Text: "{selected_text}"
-    
-    Context from the paper:
-    {context}
-    
-    Available Figures in Context:
-    {figures_context}
-    
-    Please provide a clear and detailed answer based on the provided context and figures and your general knowledge.
-    """
-    
     try:
-        print("Waiting for Gemini response...")
-        response = model.generate_content(prompt)
-        print("Response received from Gemini!")
+        data = request.get_json()
+        if not data:
+            raise ValueError("No data received")
+            
+        provider = data.get("provider")
+        if not provider or provider not in AI_PROVIDERS:
+            return jsonify({"error": "Invalid AI provider"}), 400
         
-        return jsonify({
-            "answer": response.text
-        })
+        if not AI_PROVIDERS[provider]['enabled']:
+            return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+        
+        question = data.get("question", "")
+        context = data.get("context", "")
+        selected_text = data.get("selectedText", "")
+        figures = data.get("figures", [])
+        
+        print(f"Processing answer for question: '{question}'")
+        print(f"Selected provider: {provider}")
+        print(f"Number of figures in context: {len(figures)}")
+        
+        # Build context with figures
+        figures_context = "\n".join([
+            f"Figure {fig['ref']}: Located at page {fig['page_number']}" 
+            for fig in figures if fig.get('ref')
+        ])
+        
+        prompt = f"""
+        As an AI research assistant, please answer the following question using the Selected Text, Context from the paper, the Available Figures in Context, and your general knowledge:
+        
+        Question: "{question}"
+        
+        Selected Text: "{selected_text}"
+        
+        Context from the paper:
+        {context}
+        
+        Available Figures in Context:
+        {figures_context}
+        
+        Please provide a clear and detailed answer based on the provided context and figures and your general knowledge.
+        """
+        
+        try:
+            # For synchronous operation, we'll use asyncio.run()
+            import asyncio
+            response = asyncio.run(get_ai_response(provider, prompt))
+            return jsonify({"answer": response})
+        except Exception as e:
+            print(f"Error getting AI response: {str(e)}")
+            return jsonify({"error": str(e)}), 500
+            
     except Exception as e:
-        print("\n=== ERROR OCCURRED ===")
-        print("Error type:", type(e).__name__)
-        print("Error message:", str(e))
-        return jsonify({
-            "error": str(e)
-        }), 500
+        print(f"Error in answer_question route: {str(e)}")
+        return jsonify({"error": str(e)}), 500
     
 @app.route("/chat-with-paper", methods=["POST"])
-def chat_with_paper():
-    print("\n=== NEW CHAT MESSAGE RECEIVED ===")
-    
+async def chat_with_paper():
     data = request.get_json()
+    provider = data.get("provider")
+    
+    if not provider or provider not in AI_PROVIDERS:
+        return jsonify({"error": "Invalid AI provider"}), 400
+    
+    if not AI_PROVIDERS[provider]['enabled']:
+        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+    
     message = data.get("message", "")
     paper_context = data.get("paper_context", {})
     
@@ -368,7 +422,7 @@ def chat_with_paper():
     full_text = "\n".join([page.get("text", "") for page in paper_context.get("pages", [])])
     
     prompt = f"""
-    You are an AI research assistant helping to answer questions about a research paper.
+    You are an AI research assistant helping to answer questions about a research paper which is given to you in the Paper content.
     Use the following paper content to answer the user's question.
     If you cannot answer based on the paper content, say so.
     
@@ -381,12 +435,9 @@ def chat_with_paper():
     """
     
     try:
-        print("Waiting for Gemini response...")
-        response = model.generate_content(prompt)
-        print("Response received from Gemini!")
-        
+        response = await get_ai_response(provider, prompt)
         return jsonify({
-            "response": response.text
+            "response": response
         })
     except Exception as e:
         print("\n=== ERROR OCCURRED ===")
@@ -395,6 +446,26 @@ def chat_with_paper():
         return jsonify({
             "error": str(e)
         }), 500
+
+@app.route("/ai-providers", methods=["GET"])
+def get_ai_providers():
+    print("Available providers:", {
+        provider_id: {
+            "name": info["name"],
+            "enabled": info["enabled"]
+        }
+        for provider_id, info in AI_PROVIDERS.items()
+    })  # Add debug logging
+    return jsonify({
+        "providers": [
+            {
+                "id": provider_id,
+                "name": provider_info["name"],
+                "enabled": provider_info["enabled"]
+            }
+            for provider_id, provider_info in AI_PROVIDERS.items()
+        ]
+    })
 
 def create_upload_structure(upload_id):
     """Create directory structure for a new upload"""
@@ -467,6 +538,58 @@ def save_chat_history_endpoint(upload_id):
     history = request.get_json()
     save_chat_history(upload_id, history)
     return jsonify({"status": "ok"})
+
+async def get_ai_response(provider, prompt, temperature=0.7):
+    """Generate response from selected AI provider"""
+    print(f"Getting AI response from provider: {provider}")
+    print(f"Provider enabled status: {AI_PROVIDERS[provider]['enabled']}")
+    
+    try:
+        if provider == 'gemini' and AI_PROVIDERS['gemini']['enabled']:
+            try:
+                print("Generating Gemini response...")
+                response = gemini_model.generate_content(
+                    prompt,
+                    generation_config={"temperature": temperature}
+                )
+                if not response.text:
+                    return "Response blocked due to content safety filters."
+                return response.text
+            except Exception as e:
+                print(f"Gemini error details: {str(e)}")
+                raise Exception(f"Gemini error: {str(e)}")
+            
+        elif provider == 'openai' and AI_PROVIDERS['openai']['enabled']:
+            try:
+                print("Generating OpenAI response...")
+                response = await openai_client.chat.completions.create(
+                    model="gpt-4-turbo-preview",
+                    messages=[
+                        {"role": "system", "content": "You are a helpful research assistant."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=temperature
+                )
+                return response.choices[0].message.content
+            except Exception as e:
+                print(f"OpenAI error details: {str(e)}")
+                raise Exception(f"OpenAI error: {str(e)}")
+            
+        elif provider == 'deepseek':
+            return "DeepSeek integration coming soon. Please select another AI provider."
+            
+        else:
+            available_providers = [p for p in AI_PROVIDERS if AI_PROVIDERS[p]['enabled']]
+            raise ValueError(f"AI provider '{provider}' not available. Available providers: {available_providers}")
+            
+    except Exception as e:
+        print(f"AI response error: {str(e)}")
+        raise Exception(str(e))
+
+# After configuring AI_PROVIDERS, add detailed debug logging:
+print("\nInitialized AI Providers:")
+for provider_id, info in AI_PROVIDERS.items():
+    print(f"{provider_id}: enabled = {info['enabled']}, api_key = {'set' if info['api_key'] else 'not set'}")
 
 if __name__ == '__main__':
     print("Starting Flask server in debug mode...")

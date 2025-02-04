@@ -46,9 +46,21 @@
         }
 
         #chatButton {
-            font-family: 'Lexend', sans-serif;
-            font-weight: 600;
-            text-shadow: 0 1px 2px rgba(51, 241, 189, 0.3);
+            position: fixed;
+            bottom: 20px;
+            right: 70px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background-color: #33f1bd;
+            color: #644536;
+            border-radius: 8px;
+            padding: 12px 24px;
+            font-weight: bold;
+            box-shadow: 0 4px 12px rgba(51, 241, 189, 0.3);
+            z-index: 1000;
+            white-space: nowrap;
+            font-size: 14px;
         }
 
         .user-message,
@@ -81,8 +93,8 @@
             box-sizing: border-box;
             overflow-y: auto;
             transition: transform 0.3s ease;
-            border-top-right-radius: 12px;
-            border-bottom-right-radius: 12px;
+            /* border-top-right-radius: 12px;
+            border-bottom-right-radius: 12px; */
         }
 
         #sidebar.closed {
@@ -146,8 +158,8 @@
             display: flex;
             align-items: center;
             color: white;
-            border-bottom-left-radius: 12px;
-            border-bottom-right-radius: 12px;
+            /* border-bottom-left-radius: 12px;
+            border-bottom-right-radius: 12px; */
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             width: 100%;
             box-sizing: border-box;
@@ -159,6 +171,7 @@
             font-size: 1.2em;
             text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
             text-align: center;
+            padding: 10px 0;
         }
 
         /* Upload form in topbar */
@@ -178,7 +191,7 @@
             padding: 20px;
             box-sizing: border-box;
             overflow: auto;
-            position: relative;
+            position: relative
         }
 
         .pdf-page {
@@ -186,44 +199,45 @@
             margin-bottom: 20px;
         }
 
+        /* Update annotation marker style */
         .annotation-marker {
             position: absolute;
-            background: rgba(187, 214, 134, 0.3);
-            /* Sage green with transparency */
             border: none;
-            padding: 0;
             cursor: pointer;
-            border-radius: 6px;
+            border-radius: 4px;
             transition: all 0.2s ease;
+            padding: 2px 4px;
         }
 
-        .annotation-marker:hover {
+        .annotation-marker.note {
+            background: rgba(187, 214, 134, 0.3);
+            /* #BBD686 with transparency */
+        }
+
+        .annotation-marker.note:hover {
             background: rgba(187, 214, 134, 0.5);
-            /* Darker sage green */
+        }
+
+        .annotation-marker.question {
+            background: rgba(178, 103, 94, 0.3);
+            /* #B2675E with transparency */
+        }
+
+        .annotation-marker.question:hover {
+            background: rgba(178, 103, 94, 0.5);
         }
 
         /* Right panel: Extraction data & annotations list */
         #right-panel {
             width: 300px;
             padding: 20px;
-            border-left: 1px solid #c4a381;
+            border-left: 3px solid #c4a381;
+            background-color: #c4a381;
             overflow-y: auto;
-            border-top-left-radius: 12px;
-            border-bottom-left-radius: 12px;
+            /* border-top-left-radius: 12px;
+            border-bottom-left-radius: 12px; */
             position: relative;
-            padding-bottom: 80px;
-        }
-
-        #extractionData {
-            white-space: pre-wrap;
-            background: rgba(255, 255, 255, 0.5);
-            border: 1px solid #ddd;
-            padding: 5px;
-            max-height: 300px;
-            overflow-y: auto;
-            margin-bottom: 10px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            padding-bottom: 20px;
         }
 
         #annotationList {
@@ -232,19 +246,73 @@
         }
 
         .annotation-item {
-            padding: 12px;
-            border-bottom: 1px solid #c4a381;
-            margin-bottom: 35px;
+            padding: 16px;
+            margin-bottom: 20px;
             border-radius: 8px;
-            background-color: rgba(255, 255, 255, 0.5);
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            background-color: white;
+            box-shadow: 0 1px 2px rgba(60, 64, 67, 0.3), 0 2px 6px 2px rgba(60, 64, 67, 0.15);
+            font-size: 13px;
+            line-height: 1.5;
+            position: relative;
+        }
+
+        .annotation-item::before {
+            content: '';
+            position: absolute;
+            left: -8px;
+            top: 12px;
+            width: 0;
+            height: 0;
+            border-top: 8px solid transparent;
+            border-bottom: 8px solid transparent;
+            border-right: 8px solid white;
+        }
+
+        .annotation-item .selected-text {
+            color: #5f6368;
+            margin-bottom: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #dadce0;
+            font-style: italic;
+        }
+
+        .annotation-item .comment {
+            color: #3c4043;
+            margin-bottom: 12px;
+        }
+
+        .annotation-item .metadata {
+            color: #5f6368;
+            font-size: 11px;
+            margin-bottom: 8px;
+        }
+
+        .annotation-item .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 12px;
         }
 
         .annotation-item button {
-            margin: 5px 5px 5px 0;
-            font-size: 0.8em;
-            padding: 3px 6px;
-            display: inline-block;
+            flex: 1;
+            min-width: calc(50% - 3px);
+            font-size: 11px;
+            padding: 6px 8px;
+            border-radius: 4px;
+            background-color: #f1f3f4;
+            color: #3c4043;
+            border: 1px solid #dadce0;
+            box-shadow: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            white-space: nowrap;
+        }
+
+        .annotation-item button .material-icons {
+            font-size: 14px;
+            margin-right: 4px;
         }
 
         /* Annotation Modal styling */
@@ -404,24 +472,6 @@
             box-shadow: 0 3px 6px rgba(0, 0, 0, 0.15);
         }
 
-        #chatButton {
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            background-color: #33f1bd;
-            color: #644536;
-            border-radius: 24px;
-            padding: 12px 24px;
-            font-weight: bold;
-            box-shadow: 0 4px 12px rgba(51, 241, 189, 0.3);
-            z-index: 1000;
-            white-space: nowrap;
-        }
-
         .user-message,
         .ai-message,
         .system-message {
@@ -553,6 +603,23 @@
             z-index: 100;
             pointer-events: none;
         }
+
+        /* Update annotation item style for different types */
+        .annotation-item.note::before {
+            border-right-color: #BBD686;
+        }
+
+        .annotation-item.question::before {
+            border-right-color: #B2675E;
+        }
+
+        .annotation-item.note {
+            border-left: 3px solid #BBD686;
+        }
+
+        .annotation-item.question {
+            border-left: 3px solid #B2675E;
+        }
     </style>
     <!-- Include PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
@@ -565,7 +632,7 @@
     <!-- Sidebar for conversation list -->
     <div id="sidebar">
         <div class="sidebar-header">
-            <span>Uploads</span>
+            <h3>Uploads</h3>
             <button id="closeSidebar">X</button>
         </div>
         <div id="conversationList"></div>
@@ -587,6 +654,12 @@
                     <i class="material-icons">upload</i>
                     Upload
                 </button>
+                <select id="aiProvider"
+                    style="margin-left: 10px; padding: 8px 12px; border-radius: 8px; border: 0px solid #BBD686; background: #BBD686; color: black; height: 36px; box-sizing: border-box; cursor: pointer; font-family: 'Lexend', sans-serif; font-weight: 500; font-size: 13px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); transition: all 0.2s ease; -webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: url('data:image/svg+xml;utf8,<svg fill=\'black\' height=\'24\' viewBox=\'0 0 24 24\' width=\'24\' xmlns=\'http://www.w3.org/2000/svg\'><path d=\'M7 10l5 5 5-5z\'/></svg>'); background-repeat: no-repeat; background-position: right 8px center; padding-right: 32px;">
+                    <option value="gemini">Google Gemini</option>
+                    <option value="openai">OpenAI GPT-4</option>
+                    <option value="deepseek" disabled>DeepSeek (Coming Soon)</option>
+                </select>
             </form>
         </div>
         <div id="main">
@@ -599,8 +672,6 @@
             </div>
             <!-- Right panel: Extraction data and annotations list -->
             <div id="right-panel">
-                <h2>Extracted Data</h2>
-                <pre id="extractionData"></pre>
                 <h3>Annotations</h3>
                 <div id="annotationList"></div>
                 <button id="chatButton">
@@ -747,13 +818,16 @@
             }
         }
 
-        // Add an annotation marker on the PDF page.
+        // Update the addAnnotationMarker function to use selection coordinates
         function addAnnotationMarker(pageDiv, annotation) {
             const marker = document.createElement('div');
-            marker.className = 'annotation-marker';
+            marker.className = `annotation-marker ${annotation.type}`; // Add type class
             marker.style.left = annotation.x + "px";
             marker.style.top = annotation.y + "px";
-            marker.textContent = annotation.comment;
+            marker.style.width = annotation.width + "px";
+            marker.style.height = annotation.height + "px";
+            marker.dataset.annotationId = annotation.id;
+            marker.title = annotation.comment;
             pageDiv.appendChild(marker);
         }
 
@@ -775,7 +849,7 @@
             document.getElementById('annotationText').value = "";
         });
 
-        // Save annotation from modal; include the selected annotation type.
+        // Update the saveAnnotation click handler to include dimensions
         document.getElementById('saveAnnotation').addEventListener('click', function () {
             const comment = document.getElementById('annotationText').value.trim();
             if (!comment) {
@@ -792,6 +866,8 @@
                 page,
                 x,
                 y,
+                width: currentSelection.width,   // Include width
+                height: currentSelection.height, // Include height
                 comment,
                 type: annotationType,
                 selectedText: currentSelection.text
@@ -801,10 +877,9 @@
                 const conv = conversations.find(c => c.id === currentConversationId);
                 if (conv) {
                     conv.annotations.push(annotation);
-                    currentAnnotations = conv.annotations; // Update reference
+                    currentAnnotations = conv.annotations;
                     renderAnnotations(conv.annotations);
                     persistConversations();
-                    // Re-render PDF with updated annotations
                     renderPDF(currentPdfUrl, currentAnnotations);
                 }
             }
@@ -819,23 +894,60 @@
             list.innerHTML = '';
             annotations.forEach(ann => {
                 const div = document.createElement('div');
-                div.className = 'annotation-item';
+                div.className = `annotation-item ${ann.type}`; // Add type class
+
+                // Define buttons based on annotation type
+                let actionButtons = `
+                    <button onclick="scrollToAnnotation('${ann.id}');">
+                        <i class="material-icons">location_searching</i>
+                        Go to
+                    </button>
+                `;
+
+                // Add verify button only for notes
+                if (ann.type === 'note') {
+                    actionButtons += `
+                        <button onclick="askAIVerify('${ann.id}');">
+                            <i class="material-icons">verified</i>
+                            Verify
+                        </button>
+                    `;
+                }
+
+                // Add answer button only for questions
+                if (ann.type === 'question') {
+                    actionButtons += `
+                        <button onclick="askAIAnswer('${ann.id}');">
+                            <i class="material-icons">question_answer</i>
+                            Answer
+                        </button>
+                    `;
+                }
+
+                // Add delete button for all types
+                actionButtons += `
+                    <button onclick="deleteAnnotation('${ann.id}');">
+                        <i class="material-icons">delete</i>
+                        Delete
+                    </button>
+                `;
+
                 div.innerHTML = `
-            <strong>Page ${ann.page}</strong><br>
-            <em>Selected text:</em> "${ann.selectedText}"<br>
-            <em>Comment:</em> ${ann.comment}<br>
-            <em>Type:</em> ${ann.type}`;
-                div.innerHTML += ` <button onclick="askAIVerify('${ann.id}');">Ask AI to verify</button>`;
-                div.innerHTML += ` <button onclick="askAIAnswer('${ann.id}');">Ask AI to answer</button>`;
-                div.innerHTML += ` <button onclick="deleteAnnotation('${ann.id}');">Delete</button>`;
-                list.appendChild(div);  // Add this line to append the div to the list
+                    <div class="metadata">Page ${ann.page} • ${ann.type}</div>
+                    <div class="selected-text">"${ann.selectedText}"</div>
+                    <div class="comment">${ann.comment}</div>
+                    <div class="actions">
+                        ${actionButtons}
+                    </div>
+                `;
+                list.appendChild(div);
             });
         }
         // AI verification function
         async function askAIVerify(annotationId) {
             showLoading('AI is verifying the annotation...');
             try {
-                console.log("askAIVerify called with id:", annotationId);
+                const provider = getSelectedProvider();
                 const conv = conversations.find(c => c.id === currentConversationId);
                 if (!conv) {
                     console.error("No conversation found");
@@ -854,6 +966,7 @@
                     .flatMap(p => p.figures.map(f => ({ ...f, page_number: p.page_number })));
 
                 const requestData = {
+                    provider: provider,  // Add provider to request
                     selectedText: ann.selectedText,
                     comment: ann.comment,
                     context: conv.extraction.pages[ann.page - 1].text,
@@ -902,7 +1015,7 @@
         async function askAIAnswer(annotationId) {
             showLoading('AI is analyzing your question...');
             try {
-                console.log("askAIAnswer called with id:", annotationId);
+                const provider = getSelectedProvider();
                 const conv = conversations.find(c => c.id === currentConversationId);
                 if (!conv) {
                     console.error("No conversation found");
@@ -921,6 +1034,7 @@
                     .flatMap(p => p.figures.map(f => ({ ...f, page_number: p.page_number })));
 
                 const requestData = {
+                    provider: provider,  // Add provider to request
                     selectedText: ann.selectedText,
                     question: ann.comment,
                     context: conv.extraction.pages[ann.page - 1].text,
@@ -1000,9 +1114,8 @@
                 currentConversationId = id;
                 currentAnnotations = conv.annotations || [];
                 renderPDF(conv.pdf_url, currentAnnotations);
-                document.getElementById('extractionData').textContent = JSON.stringify(conv.extraction, null, 2);
                 renderAnnotations(conv.annotations);
-                document.getElementById('uploadPrompt').style.display = 'none';  // Hide prompt when PDF is loaded
+                document.getElementById('uploadPrompt').style.display = 'none';
                 loadChatHistory(id);
             }
         }
@@ -1017,7 +1130,6 @@
                 conversations = conversations.filter(c => c.id !== id);
                 if (currentConversationId === id) {
                     document.getElementById('pdfViewer').innerHTML = "";
-                    document.getElementById('extractionData').textContent = "";
                     document.getElementById('annotationList').innerHTML = "";
                     document.getElementById('chatMessages').innerHTML = "";
                     currentChatHistory = [];
@@ -1097,12 +1209,13 @@
         // Load persistent conversations when the page loads.
         window.onload = function () {
             loadPersistentConversations();
+            loadAIProviders();
             if (conversations.length === 0) {
                 document.getElementById('uploadPrompt').style.display = 'block';  // Show prompt if no conversations
             }
         }
 
-        // Add new function to handle text selection
+        // Update the handleTextSelection function to capture selection dimensions
         function handleTextSelection(event) {
             const selection = window.getSelection();
             const selectedText = selection.toString().trim();
@@ -1126,8 +1239,10 @@
             currentSelection = {
                 text: selectedText,
                 page: parseInt(pageDiv.dataset.pageNumber),
-                x: event.clientX - pageRect.left,
-                y: event.clientY - pageRect.top
+                x: rect.left - pageRect.left,
+                y: rect.top - pageRect.top,
+                width: rect.width,   // Add width of selection
+                height: rect.height  // Add height of selection
             };
         }
 
@@ -1189,15 +1304,19 @@
             showLoading('AI is thinking...');
 
             try {
+                const provider = getSelectedProvider();
+                const requestData = {
+                    message: message,
+                    provider: provider,
+                    paper_context: conversations.find(c => c.id === currentConversationId).extraction
+                };
+
                 const response = await fetch('/chat-with-paper', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        message: message,
-                        paper_context: conversations.find(c => c.id === currentConversationId).extraction
-                    })
+                    body: JSON.stringify(requestData)
                 });
 
                 const result = await response.json();
@@ -1298,6 +1417,75 @@
                 fileLabel.querySelector('.label-text').textContent = 'Choose File';
             }
         });
+
+        // Update the scrollToAnnotation function to use type-specific colors
+        function scrollToAnnotation(annotationId) {
+            const conv = conversations.find(c => c.id === currentConversationId);
+            if (!conv) return;
+
+            const annotation = conv.annotations.find(a => a.id === annotationId);
+            if (!annotation) return;
+
+            // Find the page div
+            const pageDiv = document.querySelector(`.pdf-page[data-page-number="${annotation.page}"]`);
+            if (!pageDiv) return;
+
+            // Scroll the page into view
+            pageDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+            // Flash the annotation marker with type-specific color
+            const marker = pageDiv.querySelector(`.annotation-marker[data-annotation-id="${annotationId}"]`);
+            if (marker) {
+                marker.style.transition = 'all 0.3s ease';
+                marker.style.transform = 'scale(1.5)';
+
+                // Set highlight color based on annotation type
+                if (annotation.type === 'note') {
+                    marker.style.background = 'rgba(187, 214, 134, 0.8)'; // #BBD686
+                } else if (annotation.type === 'question') {
+                    marker.style.background = 'rgba(178, 103, 94, 0.8)'; // #B2675E
+                }
+
+                setTimeout(() => {
+                    marker.style.transform = 'scale(1)';
+                    // Reset to original transparency
+                    if (annotation.type === 'note') {
+                        marker.style.background = 'rgba(187, 214, 134, 0.3)';
+                    } else if (annotation.type === 'question') {
+                        marker.style.background = 'rgba(178, 103, 94, 0.3)';
+                    }
+                }, 1000);
+            }
+        }
+
+        // Add this after window.onload
+        async function loadAIProviders() {
+            try {
+                const response = await fetch('/ai-providers');
+                const data = await response.json();
+                console.log("Loaded AI providers:", data);  // Add debug logging
+
+                const selector = document.getElementById('aiProvider');
+                const enabledProviders = data.providers.filter(p => p.enabled);
+                console.log("Enabled providers:", enabledProviders);  // Add debug logging
+
+                selector.innerHTML = enabledProviders
+                    .map(p => `<option value="${p.id}">${p.name}</option>`)
+                    .join('');
+
+                if (enabledProviders.length === 0) {
+                    console.warn("No enabled AI providers found!");
+                    selector.innerHTML = '<option disabled>No AI providers available</option>';
+                }
+            } catch (error) {
+                console.error('Error loading AI providers:', error);
+            }
+        }
+
+        // Update the existing functions to include the selected provider
+        function getSelectedProvider() {
+            return document.getElementById('aiProvider').value;
+        }
     </script>
 </body>
 
