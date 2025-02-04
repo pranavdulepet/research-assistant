@@ -1,10 +1,10 @@
 Steps to run:
 1. python3.11 install.py
-2. create a .env file containing:
+2. create a .env file containing (need at least one, ignore other if not needed):
     OPENAI_API_KEY=your_openai_key_here
     GEMINI_API_KEY=your_gemini_key_here
 3. python run.py
-4. open [text](http://localhost:5000) in browser
+4. open [http://127.0.0.1:5000](http://127.0.0.1:5000) in browser
 
 
 
