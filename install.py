@@ -21,7 +21,7 @@ def setup_environment():
     
     # Create .env file if it doesn't exist
     if not Path(".env").exists():
-        Path(".env").write_text(Path(".env.example").read_text())
+        Path(".env").write_text(Path(".env").read_text())
         print("\nPlease edit .env file with your API keys!")
 
 if __name__ == "__main__":
