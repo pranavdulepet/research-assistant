@@ -208,7 +208,56 @@
             padding: 20px;
             box-sizing: border-box;
             overflow: auto;
-            position: relative
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        #pdfViewer {
+            position: relative;
+            transform-origin: top center;
+            transition: transform 0.2s ease;
+        }
+
+        /* Add zoom controls */
+        #zoomControls {
+            display: none;
+            /* Hide by default */
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 8px;
+            background: white;
+            padding: 8px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+            z-index: 100;
+        }
+
+        #zoomControls.no-paper {
+            display: none !important;
+        }
+
+        #zoomControls button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px;
+            height: 36px;
+            padding: 0;
+        }
+
+        #zoomControls span {
+            display: flex;
+            align-items: center;
+            padding: 0 8px;
+            color: #644536;
+            font-weight: 500;
+            min-width: 60px;
+            justify-content: center;
         }
 
         .pdf-page {
@@ -1214,6 +1263,13 @@
         </div>
     </div>
 
+    <!-- Add this before the right panel div -->
+    <div id="zoomControls">
+        <button onclick="adjustZoom(-0.25)"><i class="material-icons">remove</i></button>
+        <span id="zoomLevel">100%</span>
+        <button onclick="adjustZoom(0.25)"><i class="material-icons">add</i></button>
+    </div>
+
     <script>
         // Global variables for PDF rendering and conversation management.
         let pdfDoc = null;
@@ -1223,6 +1279,8 @@
         let currentConversationId = null;
         let currentSelection = null;
         let currentChatHistory = [];
+        let currentZoom = 1.5; // Starting zoom level (matches your existing scale)
+        let initialZoom = 1.5; // Store initial zoom for reset reference
 
         // Load persistent conversations from the server on page load.
         async function loadPersistentConversations() {
@@ -1252,8 +1310,7 @@
 
             for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
                 const page = await pdfDoc.getPage(pageNum);
-                const scale = 1.5;
-                const viewport = page.getViewport({ scale: scale });
+                const viewport = page.getViewport({ scale: currentZoom });
 
                 const pageDiv = document.createElement('div');
                 pageDiv.className = 'pdf-page';
@@ -1300,6 +1357,7 @@
                     });
                 }
             }
+            updateZoomDisplay();
         }
 
         // Update the addAnnotationMarker function to use selection coordinates
@@ -1629,7 +1687,6 @@
                 renderAnnotations(conv.annotations);
                 document.getElementById('uploadPrompt').style.display = 'none';
                 document.getElementById('welcomePanel').style.display = 'none';
-                loadChatHistory(id);
 
                 // Remove no-paper class from elements
                 document.getElementById('sidebar').classList.remove('no-paper');
@@ -1637,6 +1694,8 @@
                 document.getElementById('chatButton').classList.remove('no-paper');
                 document.getElementById('content').classList.remove('no-paper');
                 document.getElementById('main').classList.remove('no-paper');
+                document.getElementById('zoomControls').classList.remove('no-paper');
+                document.getElementById('zoomControls').style.display = 'flex';
 
                 document.getElementById('chatButton').classList.remove('disabled');
             }
@@ -1664,6 +1723,8 @@
                     document.getElementById('chatButton').classList.add('no-paper');
                     document.getElementById('content').classList.add('no-paper');
                     document.getElementById('main').classList.add('no-paper');
+                    document.getElementById('zoomControls').classList.add('no-paper');
+                    document.getElementById('zoomControls').style.display = 'none';
 
                     document.getElementById('chatButton').classList.add('disabled');
                 }
@@ -1754,6 +1815,8 @@
                 document.getElementById('chatButton').classList.add('no-paper');
                 document.getElementById('content').classList.add('no-paper');
                 document.getElementById('main').classList.add('no-paper');
+                document.getElementById('zoomControls').classList.add('no-paper');
+                document.getElementById('zoomControls').style.display = 'none';
             }
         }
 
@@ -1987,7 +2050,7 @@
             }
         });
 
-        // Update the scrollToAnnotation function to use type-specific colors
+        // Update the scrollToAnnotation function to account for zoom
         function scrollToAnnotation(annotationId) {
             const conv = conversations.find(c => c.id === currentConversationId);
             if (!conv) return;
@@ -1995,12 +2058,17 @@
             const annotation = conv.annotations.find(a => a.id === annotationId);
             if (!annotation) return;
 
-            // Find the page div
             const pageDiv = document.querySelector(`.pdf-page[data-page-number="${annotation.page}"]`);
             if (!pageDiv) return;
 
-            // Scroll the page into view
-            pageDiv.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            // Calculate the scaled position
+            const scaledY = (annotation.y * currentZoom) + pageDiv.offsetTop;
+
+            // Scroll the page into view with the scaled position
+            document.getElementById('left-panel').scrollTo({
+                top: scaledY - window.innerHeight / 2,
+                behavior: 'smooth'
+            });
 
             // Flash the annotation marker with type-specific color
             const marker = pageDiv.querySelector(`.annotation-marker[data-annotation-id="${annotationId}"]`);
@@ -2131,6 +2199,20 @@
                 document.getElementById('selectionPopup').style.display = 'none';
             }
         });
+
+        // Add these new functions
+        function adjustZoom(delta) {
+            const newZoom = currentZoom + delta;
+            if (newZoom >= 0.5 && newZoom <= 3) { // Limit zoom range
+                currentZoom = newZoom;
+                renderPDF(currentPdfUrl, currentAnnotations);
+            }
+        }
+
+        function updateZoomDisplay() {
+            const percentage = Math.round(currentZoom * 100);
+            document.getElementById('zoomLevel').textContent = `${percentage}%`;
+        }
     </script>
 </body>
 
