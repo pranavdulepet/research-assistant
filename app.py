@@ -303,22 +303,23 @@ def verify_annotation():
     
     prompt = f"""
     As an AI research assistant, please verify the following annotation based on the Context from the paper, the Available Figures in Context, and your general knowledge:
-    
+
     Selected Text: "{annotation_text}"
     User's Comment/Claim: "{comment}"
-    
+
     Context from the paper:
     {context}
-    
+
     Available Figures in Context:
     {figures_context}
-    
-    Please:
-    1. Verify if the comment/claim the User made about the selected text is accurate based on the context and available figures
-    2. Provide evidence supporting or contradicting the claim
-    3. Suggest any corrections if needed
-    
-    Format your response in clear sections.
+
+    Please structure your response in the following sections:
+    1. Verification: Verify if the comment/claim about the selected text is accurate
+    2. Evidence from Paper: Quote and cite specific parts of the paper that support your verification
+    3. General Knowledge: Clearly indicate any additional information or context you're providing from your general knowledge that isn't directly from the paper
+    4. Suggested Corrections: If needed, provide any corrections or clarifications
+
+    Format your response using markdown for better readability.
     """
     
     print("\n=== SENDING REQUEST TO GEMINI ===")
@@ -388,7 +389,13 @@ def answer_question():
         Available Figures in Context:
         {figures_context}
         
-        Please provide a clear and detailed answer based on the provided context and figures and your general knowledge.
+        Please structure your response in the following sections:
+        1. Answer: Provide a clear and detailed answer
+        2. Evidence from Paper: Quote and cite specific parts of the paper that support your answer
+        3. General Knowledge: Clearly indicate any additional information or context you're providing from your general knowledge that isn't directly from the paper
+        4. Additional Context: Include any relevant figures or sections that might be helpful
+        
+        Format your response using markdown for better readability.
         """
         
         try:
