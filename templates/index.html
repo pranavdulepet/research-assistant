@@ -368,7 +368,7 @@
 
         #annotationModalContent textarea:focus {
             outline: none;
-            border-color: #33f1bd;
+            border-color: rgba(178, 103, 94, 0.5);
         }
 
         #annotationModalContent button {
@@ -430,7 +430,7 @@
         /* Loading overlay */
         .loading-overlay {
             display: none;
-            position: fixed;
+            position: absolute;
             top: 0;
             left: 0;
             width: 100%;
@@ -652,6 +652,8 @@
             border-radius: 12px;
             display: flex;
             flex-direction: column;
+            justify-content: center;
+            align-items: center;
         }
 
         .ai-response-modal h3 {
@@ -671,6 +673,11 @@
             font-family: 'Lexend', sans-serif;
             line-height: 1.5;
             color: #333;
+            width: 100%;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .ai-response-modal .actions {
@@ -1001,6 +1008,45 @@
             justify-content: center;
             align-items: center;
         }
+
+        /* Add these styles */
+        .type-selector {
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border: 2px solid #c4a381;
+            background: white;
+            color: #644536;
+            transition: all 0.2s ease;
+            opacity: 0.7;
+        }
+
+        .type-selector:hover {
+            transform: translateY(-1px);
+            opacity: 1;
+        }
+
+        .type-selector.selected {
+            background: #c4a381;
+            color: white;
+            opacity: 1;
+        }
+
+        .type-selector .material-icons {
+            font-size: 20px;
+        }
+
+        /* Add new chat-specific loading styles */
+        #chatInterface .loading-overlay {
+            border-radius: 16px;
+            /* Match chat interface border radius */
+        }
+
+        #chatInterface .loading-text {
+            font-size: 1em;
+            /* Smaller text for chat context */
+        }
     </style>
     <!-- Include PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
@@ -1069,17 +1115,34 @@
     <div id="annotationModal">
         <div id="annotationModalContent">
             <h3>Add Annotation</h3>
-            <p id="annotationPreview" style="font-size:0.9em; color:#555;"></p>
-            <label for="annotationType">Annotation type:</label>
-            <select id="annotationType">
+            <p id="annotationPreview" style="font-size:0.9em; color:#555; text-align: center;"></p>
+
+            <!-- Add hidden select for compatibility -->
+            <select id="annotationType" style="display: none;">
                 <option value="note" selected>Note</option>
                 <option value="question">Question</option>
             </select>
-            <br>
-            <textarea id="annotationText" placeholder="Enter your comment"></textarea>
-            <br>
-            <button id="saveAnnotation">Save Annotation</button>
-            <button id="cancelAnnotation">Cancel</button>
+
+            <div style="display: flex; justify-content: center; gap: 16px; margin-bottom: 16px;">
+                <button class="type-selector" data-type="note" onclick="selectAnnotationType('note')">
+                    <i class="material-icons">note_add</i>
+                    Note
+                </button>
+                <button class="type-selector" data-type="question" onclick="selectAnnotationType('question')">
+                    <i class="material-icons">help_outline</i>
+                    Question
+                </button>
+            </div>
+
+            <div style="text-align: center;">
+                <textarea id="annotationText" placeholder="Enter your comment"
+                    style="width: 90%; margin: 0 auto;"></textarea>
+            </div>
+
+            <div style="text-align: center; margin-top: 16px;">
+                <button id="saveAnnotation">Save Annotation</button>
+                <button id="cancelAnnotation">Cancel</button>
+            </div>
         </div>
     </div>
 
@@ -1106,6 +1169,10 @@
             </div>
         </div>
         <div id="chatMessages"></div>
+        <div class="loading-overlay">
+            <div class="loading-spinner"></div>
+            <div class="loading-text">AI is thinking...</div>
+        </div>
         <div class="chat-input-container">
             <textarea id="chatInput" placeholder="Ask a question about the paper..." rows="1"
                 onInput="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"></textarea>
@@ -1318,16 +1385,11 @@
                     left: 50%;
                     top: 50%;
                     transform: translate(-50%, -50%);
-                    padding: 7px;
                     color: #644536;
-                    background: white;
-                    border-radius: 12px;
                     width: 80%;
-                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-                    border: 1px solid rgba(100, 69, 54, 0.1);
                 `;
                 emptyMessage.innerHTML = `
-                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100%;">
                         <i class="material-icons" style="font-size: 48px; opacity: 0.7; margin-bottom: 12px;">annotation</i>
                         <p style="margin: 0 0 8px 0; font-size: 14px; line-height: 1.5; text-align: center;">Select text to annotate</p>
                         <p style="margin: 0; font-size: 12px; line-height: 1.5; text-align: center; opacity: 0.8;">Once text is selected, mark as note or question to use AI to verify or answer your annotation</p>
@@ -1746,14 +1808,26 @@
         });
 
         function showLoading(message = 'Processing...') {
-            const overlay = document.querySelector('.loading-overlay');
-            const text = overlay.querySelector('.loading-text');
-            text.textContent = message;
-            overlay.style.display = 'flex';
+            // For chat-specific loading, use the loading overlay inside chat interface
+            if (message === 'AI is thinking...') {
+                const chatOverlay = document.querySelector('#chatInterface .loading-overlay');
+                const text = chatOverlay.querySelector('.loading-text');
+                text.textContent = message;
+                chatOverlay.style.display = 'flex';
+            } else {
+                // For other loading scenarios, use the main loading overlay
+                const overlay = document.querySelector('body > .loading-overlay');
+                const text = overlay.querySelector('.loading-text');
+                text.textContent = message;
+                overlay.style.display = 'flex';
+            }
         }
 
         function hideLoading() {
-            document.querySelector('.loading-overlay').style.display = 'none';
+            // Hide both loading overlays
+            document.querySelectorAll('.loading-overlay').forEach(overlay => {
+                overlay.style.display = 'none';
+            });
         }
 
         // Chat functionality
@@ -2027,6 +2101,34 @@
                         console.error('Error clearing chat history:', error);
                     }
                 }
+            }
+        });
+
+        // Add this function
+        function selectAnnotationType(type) {
+            // Update buttons
+            document.querySelectorAll('.type-selector').forEach(btn => {
+                btn.classList.remove('selected');
+                if (btn.dataset.type === type) {
+                    btn.classList.add('selected');
+                }
+            });
+
+            // Update hidden select value
+            document.getElementById('annotationType').value = type;
+        }
+
+        // Add this to initialize the UI when modal opens
+        document.getElementById('addAnnotationBtn').addEventListener('click', function () {
+            if (currentSelection) {
+                openAnnotationModal(
+                    currentSelection.page,
+                    currentSelection.x,
+                    currentSelection.y
+                );
+                // Select default type (note)
+                selectAnnotationType('note');
+                document.getElementById('selectionPopup').style.display = 'none';
             }
         });
     </script>
