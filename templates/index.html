@@ -170,16 +170,27 @@
 
         #topbar {
             background-color: #644536;
-            padding: 20px;
+            padding: 16px 24px;
             border-bottom: 1px solid #ccc;
             display: flex;
             align-items: center;
             color: white;
-            /* border-bottom-left-radius: 12px;
-            border-bottom-right-radius: 12px; */
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
             width: 100%;
             box-sizing: border-box;
+            position: relative;
+        }
+
+        #topbar .left-section {
+            position: fixed;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            z-index: 0;
+            pointer-events: none;
         }
 
         #topbar h1 {
@@ -191,9 +202,19 @@
             padding: 10px 0;
         }
 
+        #topbar .brand-name {
+            pointer-events: auto;
+        }
+
         /* Upload form in topbar */
         #uploadForm {
-            margin-left: 10px;
+            margin-left: auto;
+            z-index: 1;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            min-width: fit-content;
+            margin-right: 10px;
         }
 
         #main {
@@ -277,7 +298,7 @@
 
         .annotation-marker.note {
             background: rgba(187, 214, 134, 0.3);
-            /* #BBD686 with transparency */
+            /* #33f1bd with transparency */
         }
 
         .annotation-marker.note:hover {
@@ -596,6 +617,8 @@
             font-size: 14px;
             height: 36px;
             box-sizing: border-box;
+            white-space: nowrap;
+            min-width: fit-content;
         }
 
         .custom-file-upload:hover {
@@ -611,12 +634,6 @@
 
         input[type="file"] {
             display: none;
-        }
-
-        #uploadForm {
-            display: flex;
-            gap: 10px;
-            align-items: center;
         }
 
         #uploadForm button {
@@ -648,6 +665,11 @@
             margin-left: 10px;
             opacity: 0;
             transition: opacity 0.3s ease;
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex-shrink: 1;
         }
 
         .file-name-display.visible {
@@ -672,7 +694,7 @@
 
         /* Update annotation item style for different types */
         .annotation-item.note::before {
-            border-right-color: #BBD686;
+            border-right-color: #33f1bd;
         }
 
         .annotation-item.question::before {
@@ -680,7 +702,7 @@
         }
 
         .annotation-item.note {
-            border-left: 3px solid #BBD686;
+            border-left: 3px solid #33f1bd;
         }
 
         .annotation-item.question {
@@ -1014,7 +1036,7 @@
         }
 
         .step .step-number {
-            background: #BBD686;
+            background: #33f1bd;
             color: #644536;
             width: 28px;
             height: 28px;
@@ -1096,6 +1118,24 @@
             font-size: 1em;
             /* Smaller text for chat context */
         }
+
+        /* Add new branding styles */
+        .brand-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+        }
+
+        .brand-name {
+            font-size: 30px;
+            font-weight: 200px;
+            background: linear-gradient(135deg, #33f1bd 0%, #bbd686 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-shadow: none;
+        }
     </style>
     <!-- Include PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
@@ -1120,7 +1160,11 @@
     <!-- Main Content Area -->
     <div id="content">
         <div id="topbar">
-            <h1>AI-Powered Research Assistant</h1>
+            <div class="left-section">
+                <div class="brand-container">
+                    <p class="brand-name">DeepRead AI</p>
+                </div>
+            </div>
             <form id="uploadForm" method="POST" enctype="multipart/form-data" action="/upload">
                 <label class="custom-file-upload">
                     <input type="file" name="pdfFile" accept=".pdf" required />
@@ -1133,7 +1177,7 @@
                     Upload
                 </button>
                 <select id="aiProvider"
-                    style="margin-left: 10px; padding: 8px 12px; border-radius: 8px; border: 0px solid #BBD686; background: #BBD686; color: black; height: 36px; box-sizing: border-box; cursor: pointer; font-family: 'Lexend', sans-serif; font-weight: 500; font-size: 13px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); transition: all 0.2s ease; -webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: url('data:image/svg+xml;utf8,<svg fill=\'black\' height=\'24\' viewBox=\'0 0 24 24\' width=\'24\' xmlns=\'http://www.w3.org/2000/svg\'><path d=\'M7 10l5 5 5-5z\'/></svg>'); background-repeat: no-repeat; background-position: right 8px center; padding-right: 32px;">
+                    style="margin-left: 10px; padding: 8px 12px; border-radius: 8px; border: 0px solid #33f1bd; background: #33f1bd; color: black; height: 36px; box-sizing: border-box; cursor: pointer; font-family: 'Lexend', sans-serif; font-weight: 500; font-size: 13px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); transition: all 0.2s ease; -webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: url('data:image/svg+xml;utf8,<svg fill=\'black\' height=\'24\' viewBox=\'0 0 24 24\' width=\'24\' xmlns=\'http://www.w3.org/2000/svg\'><path d=\'M7 10l5 5 5-5z\'/></svg>'); background-repeat: no-repeat; background-position: right 8px center; padding-right: 32px;">
                     <option value="gemini">Google Gemini</option>
                     <option value="openai">OpenAI GPT-4</option>
                     <option value="deepseek" disabled>DeepSeek (Coming Soon)</option>
@@ -2078,7 +2122,7 @@
 
                 // Set highlight color based on annotation type
                 if (annotation.type === 'note') {
-                    marker.style.background = 'rgba(187, 214, 134, 0.8)'; // #BBD686
+                    marker.style.background = 'rgba(187, 214, 134, 0.8)'; // #33f1bd
                 } else if (annotation.type === 'question') {
                     marker.style.background = 'rgba(178, 103, 94, 0.8)'; // #B2675E
                 }
