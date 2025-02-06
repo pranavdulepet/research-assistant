@@ -1801,12 +1801,15 @@
                     // Clear the PDF viewer more thoroughly
                     const pdfViewer = document.getElementById('pdfViewer');
                     pdfViewer.innerHTML = "";
-                    pdfViewer.style.display = 'none'; // Hide the viewer completely
+                    pdfViewer.style.display = 'none';
+
+                    // Close and clear chat interface
+                    closeChatInterface();
+                    currentChatHistory = [];
+                    document.getElementById('chatMessages').innerHTML = "";
 
                     document.getElementById('annotationList').innerHTML = "";
-                    document.getElementById('chatMessages').innerHTML = "";
-                    currentChatHistory = [];
-                    currentConversationId = null; // Reset current conversation ID
+                    currentConversationId = null;
 
                     // Show welcome panel and add no-paper class to elements
                     document.getElementById('welcomePanel').style.display = 'block';
@@ -1824,6 +1827,18 @@
                 renderSidebar();
                 persistConversations();
             }
+        }
+
+        // Add new helper function to close chat interface
+        function closeChatInterface() {
+            const chatInterface = document.getElementById('chatInterface');
+            const chatButton = document.getElementById('chatButton');
+
+            chatInterface.classList.remove('visible');
+            setTimeout(() => {
+                chatInterface.style.display = 'none';
+            }, 300);
+            chatButton.style.display = 'block';
         }
 
         document.getElementById('uploadForm').addEventListener('submit', async function (e) {
@@ -2276,19 +2291,17 @@
             let html = marked.parse(response);
 
             // Add section styling and icons
-            html = html.replace(/<h2>Verification:/g, '<div class="response-section"><h3><i class="material-icons section-icon">verified</i>Verification:</h3>');
-            html = html.replace(/<h2>Evidence from Paper:/g, '<div class="response-section"><h3><i class="material-icons section-icon">description</i>Evidence from Paper:</h3>');
-            html = html.replace(/<h2>Evidence from Web Sources:/g, '<div class="response-section"><h3><i class="material-icons section-icon">public</i>Evidence from Web Sources:</h3>');
+            html = html.replace(/<h2>Answer:/g, '<div class="response-section"><h3><i class="material-icons section-icon">lightbulb</i>Answer:</h3>');
+            html = html.replace(/<h2>Paper Evidence:/g, '<div class="response-section"><h3><i class="material-icons section-icon">description</i>Paper Evidence:</h3>');
+            html = html.replace(/<h2>Web Sources:/g, '<div class="response-section"><h3><i class="material-icons section-icon">public</i>Web Sources:</h3>');
             html = html.replace(/<h2>General Knowledge:/g, '<div class="response-section"><h3><i class="material-icons section-icon">psychology</i>General Knowledge:</h3>');
-            html = html.replace(/<h2>Suggested Corrections:/g, '<div class="response-section"><h3><i class="material-icons section-icon">edit_note</i>Suggested Corrections:</h3>');
-            html = html.replace(/<h2>Additional Context:/g, '<div class="response-section"><h3><i class="material-icons section-icon">info</i>Additional Context:</h3>');
 
             // Add closing div for sections
             html = html.replace(/<h2>/g, '</div><h2>');
 
-            // Style citations
+            // Style web citations
             html = html.replace(
-                /Source: (.*?)\((https?:\/\/[^\s\)]+)\)/g,
+                /\[(.*?)\]\((https?:\/\/[^\s\)]+)\)/g,
                 '<div class="web-citation">📚 <a href="$2" target="_blank">$1</a></div>'
             );
 

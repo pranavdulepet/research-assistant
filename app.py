@@ -432,27 +432,46 @@ def chat_with_paper():
         return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
     
     message = data.get("message", "")
+    print("WEBSEARCH MESSAGE: ", message)
     paper_context = data.get("paper_context", {})
     
     # Combine all page text for context
     full_text = "\n".join([page.get("text", "") for page in paper_context.get("pages", [])])
     
+    # Perform web search for relevant information
+    try:
+        # Use asyncio.run() to handle the async call in sync context
+        import asyncio
+        web_results = asyncio.run(perform_web_search(message))
+        web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
+    except Exception as e:
+        print(f"Web search error: {str(e)}")
+        web_context = ""
+    
     prompt = f"""
     You are an AI research assistant helping to answer questions about a research paper which is given to you in the Paper content.
-    Use the following paper content to answer the user's question.
-    If you cannot answer based on the paper content, say so.
+    Use the following paper content and web search results to answer the user's question.
+    If you use information from web sources, clearly cite them in your response.
+    If you cannot answer based on the available information, say so.
     
     Paper content:
     {full_text}
+    {web_context}
     
     User question: {message}
     
-    Please provide a clear and detailed answer based on the paper content.
+    Please structure your response in the following paragraphs:
+    Answer: Provide a clear and detailed answer
+    Paper Evidence: Quote and cite specific parts of the paper that support your answer
+    Web Sources: If web search results were used, cite the sources and how they contributed
+    General Knowledge: Clearly indicate any additional information from your training
+    
+    Format your response using markdown for better readability.
+    When citing web sources, use the format: [Source Title](URL)
     """
     
     try:
         # Use asyncio.run() to handle the async call in sync context
-        import asyncio
         response = asyncio.run(get_ai_response(provider, prompt))
         return jsonify({
             "response": response
@@ -581,9 +600,21 @@ async def get_ai_response(provider, prompt, temperature=0.7):
     print(f"Provider enabled status: {AI_PROVIDERS[provider]['enabled']}")
     
     try:
-        # Add web search for relevant queries
-        if "verify" in prompt.lower() or "answer" in prompt.lower():
-            search_query = prompt.split("\n")[0]  # Use first line as search query
+        # Extract the actual content to search for
+        if "verify" in prompt.lower():
+            # Extract both the comment and selected text from the prompt
+            comment_match = re.search(r'User\'s Comment/Claim: "(.*?)"', prompt)
+            text_match = re.search(r'Selected Text: "(.*?)"', prompt)
+            search_query = f"{comment_match.group(1) if comment_match else ''} {text_match.group(1) if text_match else ''}"
+        elif "answer" in prompt.lower():
+            # Extract both the question and selected text from the prompt
+            question_match = re.search(r'Question: "(.*?)"', prompt)
+            text_match = re.search(r'Selected Text: "(.*?)"', prompt)
+            search_query = f"{question_match.group(1) if question_match else ''} {text_match.group(1) if text_match else ''}"
+        
+        # Clean up search query
+        search_query = search_query.strip()
+        if search_query:
             web_results = await perform_web_search(search_query)
             if web_results:
                 prompt += f"\n\nRelevant information from web search:\n{web_results}\n\nPlease incorporate relevant web information in your response, citing sources when appropriate."
