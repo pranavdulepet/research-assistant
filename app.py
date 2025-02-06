@@ -12,6 +12,9 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 import openai
+import httpx
+from openai import OpenAI
+from duckduckgo_search import DDGS
 
 app = Flask(__name__)
 
@@ -65,9 +68,11 @@ if AI_PROVIDERS['gemini']['enabled']:
     gemini_model = genai.GenerativeModel('gemini-pro')
     print("Gemini model initialized successfully")
 
-if AI_PROVIDERS['openai']['enabled']:
-    openai_client = openai.OpenAI(api_key=AI_PROVIDERS['openai']['api_key'])
-    print("OpenAI client initialized successfully")
+# if AI_PROVIDERS['openai']['enabled']:
+#     openai_client = OpenAI(
+#         api_key=AI_PROVIDERS['openai']['api_key']
+#     )
+#     print("OpenAI client initialized successfully, without proxy.")
 
 def load_conversations():
     if os.path.exists(CONVERSATIONS_FILE):
@@ -302,7 +307,7 @@ def verify_annotation():
                                 for fig in figures if fig.get('ref')])
     
     prompt = f"""
-    As an AI research assistant, please verify the following annotation based on the Context from the paper, the Available Figures in Context, and your general knowledge:
+    As an AI research assistant, please verify the following annotation based on the Context from the paper, the Available Figures in Context, and web search results:
 
     Selected Text: "{annotation_text}"
     User's Comment/Claim: "{comment}"
@@ -316,10 +321,12 @@ def verify_annotation():
     Please structure your response in the following sections:
     1. Verification: Verify if the comment/claim about the selected text is accurate
     2. Evidence from Paper: Quote and cite specific parts of the paper that support your verification
-    3. General Knowledge: Clearly indicate any additional information or context you're providing from your general knowledge that isn't directly from the paper
-    4. Suggested Corrections: If needed, provide any corrections or clarifications
+    3. Evidence from Web Sources: Clearly cite any web sources used, including URLs when available
+    4. General Knowledge: Clearly indicate any additional information from your training
+    5. Suggested Corrections: If needed, provide any corrections or clarifications
 
     Format your response using markdown for better readability.
+    When citing web sources, please use the format: [Source Title](URL)
     """
     
     print("\n=== SENDING REQUEST TO GEMINI ===")
@@ -377,7 +384,7 @@ def answer_question():
         ])
         
         prompt = f"""
-        As an AI research assistant, please answer the following question using the Selected Text, Context from the paper, the Available Figures in Context, and your general knowledge:
+        As an AI research assistant, please answer the following question using the Selected Text, Context from the paper, Available Figures in Context, and web search results:
         
         Question: "{question}"
         
@@ -392,10 +399,12 @@ def answer_question():
         Please structure your response in the following sections:
         1. Answer: Provide a clear and detailed answer
         2. Evidence from Paper: Quote and cite specific parts of the paper that support your answer
-        3. General Knowledge: Clearly indicate any additional information or context you're providing from your general knowledge that isn't directly from the paper
-        4. Additional Context: Include any relevant figures or sections that might be helpful
+        3. Evidence from Web Sources: Clearly cite any web sources used, including URLs when available
+        4. General Knowledge: Clearly indicate any additional information from your training
+        5. Additional Context: Include any relevant figures or sections that might be helpful
         
         Format your response using markdown for better readability.
+        When citing web sources, please use the format: [Source Title](URL)
         """
         
         try:
@@ -548,12 +557,32 @@ def save_chat_history_endpoint(upload_id):
     save_chat_history(upload_id, history)
     return jsonify({"status": "ok"})
 
+async def perform_web_search(query, num_results=3):
+    try:
+        search_results = []
+        with DDGS() as ddgs:
+            results = ddgs.text(query, max_results=num_results)
+            for r in results:
+                search_results.append(f"Source: {r['title']} ({r['link']})\n{r['body']}\n")
+        
+        return "\n".join(search_results)
+    except Exception as e:
+        print(f"Web search error: {str(e)}")
+        return ""
+
 async def get_ai_response(provider, prompt, temperature=0.7):
     """Generate response from selected AI provider"""
     print(f"Getting AI response from provider: {provider}")
     print(f"Provider enabled status: {AI_PROVIDERS[provider]['enabled']}")
     
     try:
+        # Add web search for relevant queries
+        if "verify" in prompt.lower() or "answer" in prompt.lower():
+            search_query = prompt.split("\n")[0]  # Use first line as search query
+            web_results = await perform_web_search(search_query)
+            if web_results:
+                prompt += f"\n\nRelevant information from web search:\n{web_results}\n\nPlease incorporate relevant web information in your response, citing sources when appropriate."
+        
         if provider == 'gemini' and AI_PROVIDERS['gemini']['enabled']:
             try:
                 print("Generating Gemini response...")

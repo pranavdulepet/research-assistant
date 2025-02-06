@@ -710,47 +710,98 @@
             left: 50%;
             transform: translate(-50%, -50%);
             background: white;
-            padding: 20px;
-            max-width: 80%;
-            max-height: 80%;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            padding: 24px;
+            max-width: 800px;
+            width: 90%;
+            max-height: 80vh;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
             z-index: 1000;
             border-radius: 12px;
             display: flex;
             flex-direction: column;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .ai-response-modal h3 {
-            margin-top: 0;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #eee;
         }
 
         .ai-response-modal .content {
             overflow-y: auto;
-            max-height: 60vh;
-            padding: 10px;
-            margin: 10px 0;
+            padding: 16px;
+            margin: 16px 0;
             background: #f8f9fa;
             border-radius: 8px;
-            white-space: pre-wrap;
             font-family: 'Lexend', sans-serif;
-            line-height: 1.5;
+            line-height: 1.6;
             color: #333;
-            width: 100%;
-            text-align: center;
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
 
-        .ai-response-modal .actions {
-            margin-top: 10px;
+        /* Response Section Styling */
+        .response-section {
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .response-section:last-child {
+            border-bottom: none;
+        }
+
+        .response-section h3 {
+            color: #1a365d;
+            font-size: 1.1em;
+            margin-bottom: 12px;
             display: flex;
-            gap: 10px;
-            justify-content: flex-end;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Citation Styling */
+        .web-citation {
+            background: #f0f7ff;
+            border-left: 3px solid #47a8e8;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        .web-citation a {
+            color: #2c5282;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .web-citation a:hover {
+            text-decoration: underline;
+        }
+
+        /* Paper Citation Styling */
+        .paper-citation {
+            background: #fff5f5;
+            border-left: 3px solid #800020;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 4px;
+            font-size: 0.9em;
+        }
+
+        /* Section Icons */
+        .section-icon {
+            font-size: 18px !important;
+            opacity: 0.8;
+        }
+
+        /* Loading State */
+        .ai-response-loading {
+            text-align: center;
+            padding: 20px;
+        }
+
+        .ai-response-loading .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #47a8e8;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 12px;
         }
 
         /* Chat Interface Styling */
@@ -1175,7 +1226,7 @@
                 <select id="aiProvider"
                     style="margin-left: 10px; padding: 8px 12px; border-radius: 8px; border: 0px solid #47a8e8; background: #47a8e8; color: black; height: 36px; box-sizing: border-box; cursor: pointer; font-family: 'Lexend', sans-serif; font-weight: 500; font-size: 13px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); transition: all 0.2s ease; -webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: url('data:image/svg+xml;utf8,<svg fill=\'black\' height=\'24\' viewBox=\'0 0 24 24\' width=\'24\' xmlns=\'http://www.w3.org/2000/svg\'><path d=\'M7 10l5 5 5-5z\'/></svg>'); background-repeat: no-repeat; background-position: right 8px center; padding-right: 32px;">
                     <option value="gemini">Google Gemini</option>
-                    <option value="openai">OpenAI GPT-4</option>
+                    <option value="openai" disabled>OpenAI GPT-4</option>
                     <option value="deepseek" disabled>DeepSeek (Coming Soon)</option>
                 </select>
             </form>
@@ -1750,10 +1801,15 @@
 
                 conversations = conversations.filter(c => c.id !== id);
                 if (currentConversationId === id) {
-                    document.getElementById('pdfViewer').innerHTML = "";
+                    // Clear the PDF viewer more thoroughly
+                    const pdfViewer = document.getElementById('pdfViewer');
+                    pdfViewer.innerHTML = "";
+                    pdfViewer.style.display = 'none'; // Hide the viewer completely
+
                     document.getElementById('annotationList').innerHTML = "";
                     document.getElementById('chatMessages').innerHTML = "";
                     currentChatHistory = [];
+                    currentConversationId = null; // Reset current conversation ID
 
                     // Show welcome panel and add no-paper class to elements
                     document.getElementById('welcomePanel').style.display = 'block';
@@ -2174,19 +2230,69 @@
             const response = type === 'verification' ? ann.aiVerification : ann.aiAnswer;
             if (!response) return;
 
+            // Create modal HTML with enhanced styling and section organization
             const modalHtml = `
                 <div class="ai-response-modal">
-                    <h3>AI ${type === 'verification' ? 'Verification' : 'Answer'}</h3>
-                    <div class="content">${marked.parse(response)}</div>
+                    <h3>
+                        <i class="material-icons">${type === 'verification' ? 'verified' : 'question_answer'}</i>
+                        AI ${type === 'verification' ? 'Verification' : 'Answer'}
+                    </h3>
+                    <div class="content">
+                        ${formatAIResponse(response)}
+                    </div>
                     <div class="actions">
-                        <button onclick="this.closest('.ai-response-modal').remove()">Close</button>
+                        <button onclick="this.closest('.ai-response-modal').remove()">
+                            <i class="material-icons">close</i>
+                            Close
+                        </button>
                         <button onclick="if(confirm('Regenerate response?')) { ${type === 'verification' ? 'askAIVerify' : 'askAIAnswer'}('${annotationId}'); this.closest('.ai-response-modal').remove(); }">
+                            <i class="material-icons">refresh</i>
                             Regenerate
                         </button>
                     </div>
                 </div>
             `;
             document.body.insertAdjacentHTML('beforeend', modalHtml);
+        }
+
+        function formatAIResponse(response) {
+            // Parse the markdown content
+            let html = marked.parse(response);
+
+            // Add section styling and icons
+            html = html.replace(/<h2>Verification:/g, '<div class="response-section"><h3><i class="material-icons section-icon">verified</i>Verification:</h3>');
+            html = html.replace(/<h2>Evidence from Paper:/g, '<div class="response-section"><h3><i class="material-icons section-icon">description</i>Evidence from Paper:</h3>');
+            html = html.replace(/<h2>Evidence from Web Sources:/g, '<div class="response-section"><h3><i class="material-icons section-icon">public</i>Evidence from Web Sources:</h3>');
+            html = html.replace(/<h2>General Knowledge:/g, '<div class="response-section"><h3><i class="material-icons section-icon">psychology</i>General Knowledge:</h3>');
+            html = html.replace(/<h2>Suggested Corrections:/g, '<div class="response-section"><h3><i class="material-icons section-icon">edit_note</i>Suggested Corrections:</h3>');
+            html = html.replace(/<h2>Additional Context:/g, '<div class="response-section"><h3><i class="material-icons section-icon">info</i>Additional Context:</h3>');
+
+            // Add closing div for sections
+            html = html.replace(/<h2>/g, '</div><h2>');
+
+            // Style citations
+            html = html.replace(
+                /Source: (.*?)\((https?:\/\/[^\s\)]+)\)/g,
+                '<div class="web-citation">📚 <a href="$2" target="_blank">$1</a></div>'
+            );
+
+            // Style paper quotes
+            html = html.replace(
+                /(".*?")\s*from the paper/g,
+                '<div class="paper-citation">$1</div>'
+            );
+
+            return html;
+        }
+
+        // Update loading state display
+        function showAILoading() {
+            return `
+                <div class="ai-response-loading">
+                    <div class="spinner"></div>
+                    <p>Processing request...</p>
+                </div>
+            `;
         }
 
         // Add clear chat functionality

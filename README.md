@@ -27,5 +27,6 @@ Notes:
 
 
 Additional features:
+- add all cited papers to the a data store and use RAG to use that context as to verify notes and answer questions
 - search the web to help verify notes and answer questions
 - explain math specifically and how it relates to the paper content
