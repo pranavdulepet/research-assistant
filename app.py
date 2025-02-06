@@ -467,13 +467,18 @@ def chat_with_paper():
 
 @app.route("/ai-providers", methods=["GET"])
 def get_ai_providers():
-    print("Available providers:", {
+    # Only return providers that have API keys configured
+    available_providers = {
         provider_id: {
             "name": info["name"],
             "enabled": info["enabled"]
         }
         for provider_id, info in AI_PROVIDERS.items()
-    })  # Add debug logging
+        if info["api_key"]  # Only include if API key is present
+    }
+    
+    print("Available providers:", available_providers)  # Debug logging
+    
     return jsonify({
         "providers": [
             {
@@ -481,7 +486,7 @@ def get_ai_providers():
                 "name": provider_info["name"],
                 "enabled": provider_info["enabled"]
             }
-            for provider_id, provider_info in AI_PROVIDERS.items()
+            for provider_id, provider_info in available_providers.items()
         ]
     })
 
@@ -597,7 +602,7 @@ async def get_ai_response(provider, prompt, temperature=0.7):
                 print(f"Gemini error details: {str(e)}")
                 raise Exception(f"Gemini error: {str(e)}")
             
-        elif provider == 'openai' and AI_PROVIDERS['openai']['enabled']:
+        elif provider == 'openai' and AI_PROVIDERS['openai']['disabled']:
             try:
                 print("Generating OpenAI response...")
                 response = await openai_client.chat.completions.create(

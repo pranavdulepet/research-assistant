@@ -1225,9 +1225,6 @@
                 </button>
                 <select id="aiProvider"
                     style="margin-left: 10px; padding: 8px 12px; border-radius: 8px; border: 0px solid #47a8e8; background: #47a8e8; color: black; height: 36px; box-sizing: border-box; cursor: pointer; font-family: 'Lexend', sans-serif; font-weight: 500; font-size: 13px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); transition: all 0.2s ease; -webkit-appearance: none; -moz-appearance: none; appearance: none; background-image: url('data:image/svg+xml;utf8,<svg fill=\'black\' height=\'24\' viewBox=\'0 0 24 24\' width=\'24\' xmlns=\'http://www.w3.org/2000/svg\'><path d=\'M7 10l5 5 5-5z\'/></svg>'); background-repeat: no-repeat; background-position: right 8px center; padding-right: 32px;">
-                    <option value="gemini">Google Gemini</option>
-                    <option value="openai" disabled>OpenAI GPT-4</option>
-                    <option value="deepseek" disabled>DeepSeek (Coming Soon)</option>
                 </select>
             </form>
         </div>
@@ -1852,7 +1849,21 @@
                 };
                 conversations.push(conv);
                 renderSidebar();
-                loadConversation(conv.id);
+
+                // Ensure PDF viewer is visible and empty before loading new PDF
+                const pdfViewer = document.getElementById('pdfViewer');
+                pdfViewer.innerHTML = "";
+                pdfViewer.style.display = 'block';
+
+                // Reset zoom to initial value for new uploads
+                currentZoom = initialZoom;
+
+                // Wait a brief moment for the DOM to update before rendering PDF
+                await new Promise(resolve => setTimeout(resolve, 100));
+
+                // Load the conversation and render the PDF
+                await loadConversation(conv.id);
+
                 persistConversations();
 
                 // Reset file input and UI state
@@ -1866,10 +1877,10 @@
                 fileNameDisplay.textContent = '';
                 labelText.textContent = 'Choose File';
 
-                // Add this line to hide welcome panel after successful upload
                 document.getElementById('welcomePanel').style.display = 'none';
 
             } catch (error) {
+                console.error("Upload error:", error);
                 alert("Error uploading PDF: " + error.message);
             } finally {
                 hideLoading();
@@ -2196,19 +2207,24 @@
             try {
                 const response = await fetch('/ai-providers');
                 const data = await response.json();
-                console.log("Loaded AI providers:", data);  // Add debug logging
+                const select = document.getElementById('aiProvider');
+                select.innerHTML = ''; // Clear existing options
 
-                const selector = document.getElementById('aiProvider');
-                const enabledProviders = data.providers.filter(p => p.enabled);
-                console.log("Enabled providers:", enabledProviders);  // Add debug logging
+                // Add available providers from the backend
+                data.providers.forEach(provider => {
+                    const option = document.createElement('option');
+                    option.value = provider.id;
+                    option.textContent = provider.name;
+                    option.disabled = !provider.enabled;
+                    select.appendChild(option);
+                });
 
-                selector.innerHTML = enabledProviders
-                    .map(p => `<option value="${p.id}">${p.name}</option>`)
-                    .join('');
-
-                if (enabledProviders.length === 0) {
-                    console.warn("No enabled AI providers found!");
-                    selector.innerHTML = '<option disabled>No AI providers available</option>';
+                // If no providers are available, add a default disabled option
+                if (data.providers.length === 0) {
+                    const option = document.createElement('option');
+                    option.textContent = 'No AI providers available';
+                    option.disabled = true;
+                    select.appendChild(option);
                 }
             } catch (error) {
                 console.error('Error loading AI providers:', error);
