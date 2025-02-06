@@ -1,6 +1,6 @@
 from flask import Flask, request, render_template, jsonify
 import os
-import fitz  # PyMuPDF
+import fitz 
 import re
 import uuid
 import math
