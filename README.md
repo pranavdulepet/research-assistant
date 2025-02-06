@@ -12,21 +12,20 @@ Steps to run:
 
 
 -----------------------------------
-Notes:
-- Research paper reader helper
-    - Cursor for research papers
+Features:
+- Cursor for literature review
 - Upload research paper, extract text, figures, etc.
-- Extract citations and find the cited papers
 - Allow user to annotate and write notes
 - Add “Chat with paper”
     - ask anything about the paper and get a response based on the paper's context and general knowledge
 - Add “Ask AI to verify” (notes, annotation, etc.)
     - verify if notes are valid in the paper's context and general knowledge
+    - searches the web to help verify notes
 - Add “Ask AI to answer” (any questions in annotations, this can be a specific type of “question” annotation)
     - answer the question based on the paper's context and general knowledge
+    - searches the web to help answer questions
 
 
-Additional features:
+Upcoming features:
 - add all cited papers to the a data store and use RAG to use that context as to verify notes and answer questions
-- search the web to help verify notes and answer questions
 - explain math specifically and how it relates to the paper content
