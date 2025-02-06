@@ -27,4 +27,5 @@ Notes:
 
 
 Additional features:
+- search the web to help verify notes and answer questions
 - explain math specifically and how it relates to the paper content
