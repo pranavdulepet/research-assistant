@@ -51,8 +51,8 @@ AI_PROVIDERS = {
     'openai': {
         'id': 'openai',
         'name': 'OpenAI GPT-4',
-        'enabled': bool(os.getenv("OPENAI_API_KEY")),
-        'api_key': os.getenv("OPENAI_API_KEY")
+        'enabled': False, #bool(os.getenv("OPENAI_API_KEY")),
+        'api_key': None #os.getenv("OPENAI_API_KEY")
     },
     'deepseek': {
         'id': 'deepseek',
@@ -68,11 +68,11 @@ if AI_PROVIDERS['gemini']['enabled']:
     gemini_model = genai.GenerativeModel('gemini-pro')
     print("Gemini model initialized successfully")
 
-# if AI_PROVIDERS['openai']['enabled']:
-#     openai_client = OpenAI(
-#         api_key=AI_PROVIDERS['openai']['api_key']
-#     )
-#     print("OpenAI client initialized successfully, without proxy.")
+if AI_PROVIDERS['openai']['enabled']:
+    openai_client = OpenAI(
+        api_key=AI_PROVIDERS['openai']['api_key']
+    )
+    print("OpenAI client initialized successfully, without proxy.")
 
 def load_conversations():
     if os.path.exists(CONVERSATIONS_FILE):
