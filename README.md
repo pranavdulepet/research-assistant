@@ -1,6 +1,6 @@
 Steps to run:
 1. create a .env file containing (need at least one, ignore other if not needed):
-    OPENAI_API_KEY=your_openai_key_here
+    OPENAI_API_KEY=your_openai_key_here\\
     GEMINI_API_KEY=your_gemini_key_here
 2. python3.11 install.py
 3. source venv/bin/activate
