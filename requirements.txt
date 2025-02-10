@@ -7,3 +7,13 @@ duckduckgo-search
 transformers 
 torch
 accelerate
+chromadb
+beautifulsoup4
+langchain 
+faiss-cpu 
+scholarly 
+requests
+langchain_community
+sentence-transformers
+habanero 
+semanticscholar

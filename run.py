@@ -1,4 +1,4 @@
-from app.app import app
+from app.py import app
 
 if __name__ == '__main__':
     print("Starting Research Paper Assistant...")

@@ -2,3 +2,6 @@
 .venv/
 app/static/figures/
 app/static/uploads/
+data/
+models/
+paper_store/
