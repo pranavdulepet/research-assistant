@@ -1358,6 +1358,14 @@
         <button onclick="adjustZoom(0.25)"><i class="material-icons">add</i></button>
     </div>
 
+    <!-- Progress bar container with a label, displayed at bottom left -->
+    <div id="progressBarContainer"
+        style="display:none; position:fixed; bottom:20px; left:20px; width:220px; background:#e0e0e0; border-radius:5px; z-index: 1000; padding: 10px;">
+        <div id="progressBar" style="width:0%; height:20px; background:#47a8e8; border-radius:5px;"></div>
+        <span id="progressLabel"
+            style="display:block; text-align:center; font-size:12px; color:#000; margin-top:5px;">0%</span>
+    </div>
+
     <script>
         // Global variables for PDF rendering and conversation management.
         let pdfDoc = null;
@@ -1843,21 +1851,40 @@
 
         document.getElementById('uploadForm').addEventListener('submit', async function (e) {
             e.preventDefault();
-            showLoading('Uploading and processing PDF...');
 
+            // Show progress bar and start simulated progress
+            const progressBarContainer = document.getElementById("progressBarContainer");
+            const progressBar = document.getElementById("progressBar");
+            const progressLabel = document.getElementById("progressLabel");
+            progressBarContainer.style.display = "block";
+            progressBar.style.width = "0%";
+            progressLabel.textContent = "0%";
+
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                if (progress < 90) {
+                    progress += 10;
+                    progressBar.style.width = progress + "%";
+                    progressLabel.textContent = "Processing references: " + progress + "%";
+                }
+            }, 500);
+
+            const formData = new FormData(this);
             try {
-                const formData = new FormData(this);
-                const fileInput = document.querySelector('input[name="pdfFile"]');
-                const fileName = fileInput.files[0].name;
-
                 const response = await fetch('/upload', { method: 'POST', body: formData });
                 if (!response.ok) {
                     throw new Error("Error uploading PDF");
                 }
                 const data = await response.json();
+
+                // Update the progress label with the actual DOI count from the server response
+                const doiCount = data.citations ? data.citations.length : 0;
+                progressLabel.textContent = "Extraction complete: " + doiCount + " DOIs processed";
+
+                // Add the new conversation
                 const conv = {
                     id: data.upload_id,
-                    title: fileName,
+                    title: formData.get("pdfFile").name,
                     pdf_url: data.pdf_url,
                     extraction: data.extraction,
                     annotations: []
@@ -1865,7 +1892,7 @@
                 conversations.push(conv);
                 renderSidebar();
 
-                // Ensure PDF viewer is visible and empty before loading new PDF
+                // Ensure PDF viewer is visible and clear prior content
                 const pdfViewer = document.getElementById('pdfViewer');
                 pdfViewer.innerHTML = "";
                 pdfViewer.style.display = 'block';
@@ -1873,31 +1900,32 @@
                 // Reset zoom to initial value for new uploads
                 currentZoom = initialZoom;
 
-                // Wait a brief moment for the DOM to update before rendering PDF
+                // Brief delay for DOM update before processing PDF
                 await new Promise(resolve => setTimeout(resolve, 100));
 
                 // Load the conversation and render the PDF
                 await loadConversation(conv.id);
-
                 persistConversations();
 
-                // Reset file input and UI state
+                // Reset file input UI state
                 this.reset();
                 const fileLabel = document.querySelector('.custom-file-upload');
                 const fileNameDisplay = document.querySelector('.file-name-display');
-                const labelText = fileLabel.querySelector('.label-text');
-
                 fileLabel.classList.remove('file-selected');
                 fileNameDisplay.classList.remove('visible');
                 fileNameDisplay.textContent = '';
-                labelText.textContent = 'Choose File';
-
+                fileLabel.querySelector('.label-text').textContent = 'Choose File';
                 document.getElementById('welcomePanel').style.display = 'none';
-
             } catch (error) {
                 console.error("Upload error:", error);
                 alert("Error uploading PDF: " + error.message);
             } finally {
+                // Complete progress and hide the progress bar
+                clearInterval(progressInterval);
+                progressBar.style.width = "100%";
+                setTimeout(() => {
+                    progressBarContainer.style.display = "none";
+                }, 500);
                 hideLoading();
             }
         });

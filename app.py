@@ -15,6 +15,19 @@ import openai
 import httpx
 from openai import OpenAI
 from duckduckgo_search import DDGS
+import logging
+import sqlite3
+from bs4 import BeautifulSoup
+
+# New imports from our external modules
+from combined_extraction import extract_references_from_pdf, get_open_access_pdf_url
+
+# Configure logging to display time, log level, and message
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="[%(asctime)s] %(levelname)s: %(message)s",
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 app = Flask(__name__)
 
@@ -36,9 +49,9 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 load_dotenv()
 
 # After load_dotenv(), add these debug prints:
-print("\nEnvironment Variables Check:")
-print(f"GEMINI_API_KEY present: {bool(os.getenv('GEMINI_API_KEY'))}")
-print(f"OPENAI_API_KEY present: {bool(os.getenv('OPENAI_API_KEY'))}")
+logging.info("Environment Variables Check:")
+logging.info("GEMINI_API_KEY present: %s", bool(os.getenv('GEMINI_API_KEY')))
+logging.info("OPENAI_API_KEY present: %s", bool(os.getenv('OPENAI_API_KEY')))
 
 # Configure AI Providers
 AI_PROVIDERS = {
@@ -88,40 +101,107 @@ def save_conversations(conversations):
 def index():
     return render_template('index.html')
 
+def advanced_extract_and_store_references(pdf_path, upload_id, citations_path, email="your-email@example.com"):
+    """
+    Use pdfx (from extract_references.py) to extract all references from the PDF.
+    Then for each extracted DOI use the Unpaywall API (via get_open_access_pdf_url)
+    to get an open access full-text URL, fetch the full text from the URL (if available),
+    and store the record in the local SQLite database.
+    """
+    references = extract_references_from_pdf(pdf_path)
+    
+    # references might be a dictionary (DOI -> citation) or a set of DOIs.
+    if isinstance(references, dict):
+        ref_items = references.items()
+    else:
+        ref_items = ((doi, "") for doi in references)
+
+    num_refs = len(references) if references else 0
+    logging.info("Extracted %d references using pdfx", num_refs)
+    citations = []
+    
+    for doi, citation_text in ref_items:
+        # Ensure both DOI and citation_text are plain strings.
+        doi_str = str(doi)
+        citation_text_str = str(citation_text) if citation_text else doi_str
+        
+        logging.info("Processing reference DOI: %s", doi_str)
+        # Get full text URL from Unpaywall API
+        oa_pdf_url = get_open_access_pdf_url(doi_str, email)
+        if oa_pdf_url:
+            logging.info("Found full text URL for DOI %s: %s", doi_str, oa_pdf_url)
+            full_text = fetch_full_text(oa_pdf_url)
+        else:
+            logging.warning("No full text URL found via Unpaywall for DOI %s", doi_str)
+            full_text = None
+        
+        # Build minimal metadata record using the extracted citation text.
+        metadata = {
+            "DOI": doi_str,
+            "title": [citation_text_str],
+            "publisher": "",
+            "author": [],
+            "abstract": "",
+            "link": [{"URL": oa_pdf_url}] if oa_pdf_url else [],
+            "URL": oa_pdf_url if oa_pdf_url else ""
+        }
+        store_cited_paper(metadata, full_text, upload_id)
+        citations.append(metadata)
+    
+    # Save citations as a JSON file within the upload's citations folder.
+    citations_file = citations_path / "citations.json"
+    with open(citations_file, "w") as f:
+        json.dump(citations, f, indent=2)
+    logging.info("Citations data stored at %s", citations_file)
+    return citations
+
 @app.route('/upload', methods=['POST'])
 def upload_pdf():
     if 'pdfFile' not in request.files:
+        logging.error("No file part in the request")
         return "No file part in the request", 400
     
     pdf_file = request.files['pdfFile']
     if pdf_file.filename == '':
+        logging.error("No selected file")
         return "No selected file", 400
     
     # Create unique ID and directory structure
     upload_id = str(uuid.uuid4())
     paths = create_upload_structure(upload_id)
+    logging.info("Created upload structure for ID: %s", upload_id)
     
     # Save the PDF
     pdf_path = paths['pdf_path'] / 'original.pdf'
     pdf_file.save(pdf_path)
+    logging.info("Saved PDF to %s", pdf_path)
     
-    # Extract data
+    # Extract data (text and figures)
     extraction_data = extract_text_and_figures(str(pdf_path), upload_id, paths['figures_path'])
+    logging.info("Completed text and figure extraction")
     
-    # Save metadata
+    # Use the new advanced extraction for references
+    citations_data = advanced_extract_and_store_references(str(pdf_path), upload_id, paths['citations_path'])
+    logging.info("Advanced citations extraction completed: %s", citations_data)
+    
+    # Save metadata (include citations if desired)
     metadata = {
         'upload_id': upload_id,
         'original_filename': pdf_file.filename,
         'upload_date': datetime.now().isoformat(),
-        'extraction_data': extraction_data
+        'extraction_data': extraction_data,
+        'citations': citations_data
     }
     save_metadata(upload_id, metadata)
+    logging.info("Metadata saved for upload ID: %s", upload_id)
     
     result = {
         "upload_id": upload_id,
         "pdf_url": f"/static/uploads/{upload_id}/pdf/original.pdf",
-        "extraction": extraction_data
+        "extraction": extraction_data,
+        "citations": citations_data
     }
+    logging.info("Upload endpoint completed for ID: %s", upload_id)
     return jsonify(result)
 
 def convert_region_to_svg(pdf_path, page_number, bbox, output_svg):
@@ -268,10 +348,14 @@ def delete_upload(upload_id):
         base_path = Path(app.config['STORAGE_BASE']) / upload_id
         
         if base_path.exists():
-            # Remove the entire directory structure for this upload
+            # Remove the entire directory structure for this upload including citations, chats, pdf, and figures.
             shutil.rmtree(base_path)
+            logging.info("Deleted folder for upload_id: %s", upload_id)
             
-            # Load and update conversations.json
+            # Delete corresponding cited papers from the database
+            delete_cited_papers(upload_id)
+            
+            # Update conversations.json accordingly
             conversations = load_conversations()
             conversations = [c for c in conversations if c['id'] != upload_id]
             save_conversations(conversations)
@@ -279,8 +363,8 @@ def delete_upload(upload_id):
             return jsonify({"status": "ok"})
         else:
             return jsonify({"error": "Upload not found"}), 404
-            
     except Exception as e:
+        logging.exception("Error occurred while processing delete_upload")
         return jsonify({"error": str(e)}), 500
 
 @app.route("/verify-annotation", methods=["POST"])
@@ -515,17 +599,19 @@ def create_upload_structure(upload_id):
     pdf_path = base_path / 'pdf'
     figures_path = base_path / 'figures'
     chats_path = base_path / 'chats'
-    
+    citations_path = base_path / 'citations'    # New citations folder
     # Create directories
     pdf_path.mkdir(parents=True, exist_ok=True)
     figures_path.mkdir(parents=True, exist_ok=True)
     chats_path.mkdir(parents=True, exist_ok=True)
+    citations_path.mkdir(parents=True, exist_ok=True)
     
     return {
         'base_path': base_path,
         'pdf_path': pdf_path,
         'figures_path': figures_path,
-        'chats_path': chats_path
+        'chats_path': chats_path,
+        'citations_path': citations_path  # Return the path for citations
     }
 
 def save_metadata(upload_id, metadata):
@@ -595,9 +681,8 @@ async def perform_web_search(query, num_results=3):
         return ""
 
 async def get_ai_response(provider, prompt, temperature=0.7):
-    """Generate response from selected AI provider"""
-    print(f"Getting AI response from provider: {provider}")
-    print(f"Provider enabled status: {AI_PROVIDERS[provider]['enabled']}")
+    logging.info("Getting AI response from provider: %s", provider)
+    logging.debug("Provider enabled status: %s", AI_PROVIDERS[provider]['enabled'])
     
     try:
         # Extract the actual content to search for
@@ -621,7 +706,7 @@ async def get_ai_response(provider, prompt, temperature=0.7):
         
         if provider == 'gemini' and AI_PROVIDERS['gemini']['enabled']:
             try:
-                print("Generating Gemini response...")
+                logging.info("Generating Gemini response...")
                 response = gemini_model.generate_content(
                     prompt,
                     generation_config={"temperature": temperature}
@@ -630,12 +715,12 @@ async def get_ai_response(provider, prompt, temperature=0.7):
                     return "Response blocked due to content safety filters."
                 return response.text
             except Exception as e:
-                print(f"Gemini error details: {str(e)}")
+                logging.error("Gemini error details: %s", str(e))
                 raise Exception(f"Gemini error: {str(e)}")
             
         elif provider == 'openai' and AI_PROVIDERS['openai']['disabled']:
             try:
-                print("Generating OpenAI response...")
+                logging.info("Generating OpenAI response...")
                 response = await openai_client.chat.completions.create(
                     model="gpt-4-turbo-preview",
                     messages=[
@@ -646,7 +731,7 @@ async def get_ai_response(provider, prompt, temperature=0.7):
                 )
                 return response.choices[0].message.content
             except Exception as e:
-                print(f"OpenAI error details: {str(e)}")
+                logging.error("OpenAI error details: %s", str(e))
                 raise Exception(f"OpenAI error: {str(e)}")
             
         elif provider == 'deepseek':
@@ -657,14 +742,111 @@ async def get_ai_response(provider, prompt, temperature=0.7):
             raise ValueError(f"AI provider '{provider}' not available. Available providers: {available_providers}")
             
     except Exception as e:
-        print(f"AI response error: {str(e)}")
+        logging.error("AI response error: %s", str(e))
         raise Exception(str(e))
+
+def store_cited_paper(metadata, full_text, upload_id, db_path="cited_papers.db"):
+    """Store cited paper metadata and full text into the local SQLite database with its associated upload_id."""
+    doi = metadata.get("DOI", "")
+    title_list = metadata.get("title", [])
+    title = title_list[0] if title_list else ""
+    publisher = metadata.get("publisher", "")
+    authors_data = metadata.get("author", [])
+    if isinstance(authors_data, list) and authors_data:
+        authors = ", ".join([
+            f"{a.get('given', '').strip()} {a.get('family', '').strip()}"
+            for a in authors_data if isinstance(a, dict)
+        ])
+    else:
+        authors = ""
+    abstract = metadata.get("abstract", "")
+    # Determine the URL from "link" if available or fallback to "URL".
+    url = ""
+    links = metadata.get("link", [])
+    if isinstance(links, list) and len(links) > 0:
+        first_link = links[0]
+        if isinstance(first_link, dict):
+            url = first_link.get("URL", "")
+    if not url:
+        url = metadata.get("URL", "")
+    
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    try:
+        c.execute('''
+            INSERT OR REPLACE INTO cited_papers (doi, upload_id, title, publisher, authors, abstract, full_text, url)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (doi, upload_id, title, publisher, authors, abstract, full_text, url))
+        conn.commit()
+        logging.info("Stored cited paper with DOI: %s for upload_id: %s", doi, upload_id)
+    except Exception as e:
+        logging.error("Error inserting into DB for DOI %s and upload_id %s: %s", doi, upload_id, str(e))
+    finally:
+        conn.close()
+
+def fetch_full_text(url):
+    """Fetch and extract text content from the given URL using BeautifulSoup."""
+    try:
+        response = httpx.get(url, timeout=10.0)
+        if response.status_code == 200:
+            html = response.text
+            soup = BeautifulSoup(html, "html.parser")
+            # Remove unwanted tags
+            for script in soup(["script", "style"]):
+                script.decompose()
+            text = soup.get_text(separator="\n")
+            # Simplify whitespace
+            text = "\n".join([line.strip() for line in text.splitlines() if line.strip()])
+            logging.info("Fetched full text from %s", url)
+            return text
+        else:
+            logging.warning("Failed to fetch full text from %s, status %s", url, response.status_code)
+            return None
+    except Exception as e:
+        logging.error("Exception fetching full text from %s: %s", url, str(e))
+        return None
 
 # After configuring AI_PROVIDERS, add detailed debug logging:
 print("\nInitialized AI Providers:")
 for provider_id, info in AI_PROVIDERS.items():
     print(f"{provider_id}: enabled = {info['enabled']}, api_key = {'set' if info['api_key'] else 'not set'}")
 
+def init_cited_papers_db(db_path="cited_papers.db"):
+    """Initialize the SQLite database to store cited paper content."""
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS cited_papers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doi TEXT,
+            upload_id TEXT,
+            title TEXT,
+            publisher TEXT,
+            authors TEXT,
+            abstract TEXT,
+            full_text TEXT,
+            url TEXT,
+            UNIQUE(doi, upload_id)
+        )
+    ''')
+    conn.commit()
+    conn.close()
+    logging.info("Initialized cited papers database at %s", db_path)
+
+def delete_cited_papers(upload_id, db_path="cited_papers.db"):
+    """Delete all cited papers in the database that are linked with the given upload_id."""
+    conn = sqlite3.connect(db_path)
+    c = conn.cursor()
+    try:
+        c.execute("DELETE FROM cited_papers WHERE upload_id = ?", (upload_id,))
+        conn.commit()
+        logging.info("Deleted cited papers for upload_id: %s", upload_id)
+    except Exception as e:
+        logging.error("Error deleting cited papers for upload_id %s: %s", upload_id, str(e))
+    finally:
+        conn.close()
+
 if __name__ == '__main__':
-    print("Starting Flask server in debug mode...")
+    init_cited_papers_db()
+    logging.info("Starting Flask server in debug mode...")
     app.run(debug=True, port=5000)

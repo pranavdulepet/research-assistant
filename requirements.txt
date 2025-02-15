@@ -17,3 +17,8 @@ langchain_community
 sentence-transformers
 habanero 
 semanticscholar
+httpx
+beautifulsoup4
+pdfx
+
+

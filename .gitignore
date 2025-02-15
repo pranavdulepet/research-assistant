@@ -1,7 +1,10 @@
 .env
 .venv/
+venv/
+__pycache__/
 app/static/figures/
 app/static/uploads/
 data/
 models/
 paper_store/
+cited_papers.db
