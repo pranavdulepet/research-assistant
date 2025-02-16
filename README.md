@@ -3,10 +3,10 @@ Steps to run:
     OPENAI_API_KEY=your_openai_key_here
    
     GEMINI_API_KEY=your_gemini_key_here
-3. python3.11 install.py
-4. source venv/bin/activate
-3. python3 run.py
-4. open [http://127.0.0.1:5000](http://127.0.0.1:5000) in browser
+2. source .venv/bin/activate
+3. pip install -r requirements.txt
+4. python3 app.py
+5. open [http://127.0.0.1:5000](http://127.0.0.1:5000) in browser
 
 
 
@@ -15,7 +15,7 @@ Steps to run:
 -----------------------------------
 Features:
 - Cursor for literature review
-- Upload research paper, extract text, figures, etc.
+- Upload research paper, extract text, figures, cited papers, etc.
 - Allow user to annotate and write notes
 - Add “Chat with paper”
     - ask anything about the paper and get a response based on the paper's context and general knowledge
@@ -28,5 +28,4 @@ Features:
 
 
 Upcoming features:
-- add all cited papers to the a data store and use RAG to use that context as to verify notes and answer questions
 - explain math specifically and how it relates to the paper content

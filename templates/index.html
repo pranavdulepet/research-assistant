@@ -1183,6 +1183,33 @@
             -webkit-text-fill-color: transparent;
             text-shadow: transparent;
         }
+
+        #progressBarContainer {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            width: 220px;
+            background: #e0e0e0;
+            border-radius: 5px;
+            z-index: 1000;
+            padding: 10px;
+        }
+
+        #progressBar {
+            width: 0%;
+            height: 20px;
+            background: #47a8e8;
+            border-radius: 5px;
+            transition: width 0.3s ease;
+        }
+
+        #progressLabel {
+            display: block;
+            text-align: center;
+            font-size: 12px;
+            color: #000;
+            margin-top: 5px;
+        }
     </style>
     <!-- Include PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
@@ -1232,7 +1259,7 @@
             <!-- Left panel: PDF viewer -->
             <div id="left-panel">
                 <div id="uploadPrompt">
-                    <h2>Upload a research paper to get started...</h2>
+                    <!-- <h2>Upload a research paper to get started...</h2> -->
                 </div>
                 <div id="pdfViewer"></div>
             </div>
@@ -1641,6 +1668,7 @@
 
                 const requestData = {
                     provider: provider,  // Add provider to request
+                    uploadId: currentConversationId,  // Add the upload ID
                     selectedText: ann.selectedText,
                     comment: ann.comment,
                     context: conv.extraction.pages[ann.page - 1].text,
@@ -1705,6 +1733,7 @@
 
                 const requestData = {
                     provider: provider,  // Add provider to request
+                    uploadId: currentConversationId,  // Add the upload ID
                     selectedText: ann.selectedText,
                     question: ann.comment,
                     context: conv.extraction.pages[ann.page - 1].text,
@@ -1852,22 +1881,13 @@
         document.getElementById('uploadForm').addEventListener('submit', async function (e) {
             e.preventDefault();
 
-            // Show progress bar and start simulated progress
+            // Show progress bar
             const progressBarContainer = document.getElementById("progressBarContainer");
             const progressBar = document.getElementById("progressBar");
             const progressLabel = document.getElementById("progressLabel");
             progressBarContainer.style.display = "block";
             progressBar.style.width = "0%";
             progressLabel.textContent = "0%";
-
-            let progress = 0;
-            const progressInterval = setInterval(() => {
-                if (progress < 90) {
-                    progress += 10;
-                    progressBar.style.width = progress + "%";
-                    progressLabel.textContent = "Processing references: " + progress + "%";
-                }
-            }, 500);
 
             const formData = new FormData(this);
             try {
@@ -1877,35 +1897,50 @@
                 }
                 const data = await response.json();
 
-                // Update the progress label with the actual DOI count from the server response
-                const doiCount = data.citations ? data.citations.length : 0;
-                progressLabel.textContent = "Extraction complete: " + doiCount + " DOIs processed";
-
-                // Add the new conversation
+                // Create and display the conversation immediately with the PDF
                 const conv = {
                     id: data.upload_id,
                     title: formData.get("pdfFile").name,
                     pdf_url: data.pdf_url,
                     extraction: data.extraction,
-                    annotations: []
+                    annotations: [],
+                    citations: [] // Will be updated when background task completes
                 };
                 conversations.push(conv);
                 renderSidebar();
 
-                // Ensure PDF viewer is visible and clear prior content
-                const pdfViewer = document.getElementById('pdfViewer');
-                pdfViewer.innerHTML = "";
-                pdfViewer.style.display = 'block';
-
-                // Reset zoom to initial value for new uploads
-                currentZoom = initialZoom;
-
-                // Brief delay for DOM update before processing PDF
-                await new Promise(resolve => setTimeout(resolve, 100));
-
-                // Load the conversation and render the PDF
+                // Load the conversation and render the PDF immediately
                 await loadConversation(conv.id);
                 persistConversations();
+
+                // Start polling for progress in background
+                const taskId = data.task_id;
+                const pollInterval = setInterval(async () => {
+                    const progressResponse = await fetch(`/task-progress/${taskId}`);
+                    const progressData = await progressResponse.json();
+
+                    if (progressData.error) {
+                        clearInterval(pollInterval);
+                        throw new Error(progressData.error);
+                    }
+
+                    // Update progress bar
+                    progressBar.style.width = `${progressData.progress}%`;
+                    progressLabel.textContent = `${progressData.status} (${progressData.progress}%)`;
+
+                    if (progressData.complete) {
+                        clearInterval(pollInterval);
+
+                        // Update the conversation with citations from the background task
+                        conv.citations = progressData.result;
+                        persistConversations();
+
+                        // Hide progress after a brief delay
+                        setTimeout(() => {
+                            progressBarContainer.style.display = "none";
+                        }, 500);
+                    }
+                }, 1000); // Poll every second
 
                 // Reset file input UI state
                 this.reset();
@@ -1916,17 +1951,11 @@
                 fileNameDisplay.textContent = '';
                 fileLabel.querySelector('.label-text').textContent = 'Choose File';
                 document.getElementById('welcomePanel').style.display = 'none';
+
             } catch (error) {
                 console.error("Upload error:", error);
                 alert("Error uploading PDF: " + error.message);
-            } finally {
-                // Complete progress and hide the progress bar
-                clearInterval(progressInterval);
-                progressBar.style.width = "100%";
-                setTimeout(() => {
-                    progressBarContainer.style.display = "none";
-                }, 500);
-                hideLoading();
+                progressBarContainer.style.display = "none";
             }
         });
 
@@ -2083,6 +2112,7 @@
                 const requestData = {
                     message: message,
                     provider: provider,
+                    uploadId: currentConversationId,  // Add the upload ID
                     paper_context: conversations.find(c => c.id === currentConversationId).extraction
                 };
 
@@ -2416,6 +2446,90 @@
             const percentage = Math.round(currentZoom * 100);
             document.getElementById('zoomLevel').textContent = `${percentage}%`;
         }
+
+        // Add this function to check task status on page load
+        async function checkExistingTasks() {
+            // Get all conversations
+            const conversations = await fetch('/conversations').then(r => r.json());
+
+            // Check each conversation for incomplete tasks
+            for (const conv of conversations) {
+                const taskId = conv.id; // Using conversation id as task id
+                try {
+                    const progressResponse = await fetch(`/task-progress/${taskId}`);
+                    const progressData = await progressResponse.json();
+
+                    if (!progressData.complete) {
+                        // Show and update progress bar
+                        const progressBarContainer = document.getElementById("progressBarContainer");
+                        const progressBar = document.getElementById("progressBar");
+                        const progressLabel = document.getElementById("progressLabel");
+                        progressBarContainer.style.display = "block";
+                        progressBar.style.width = `${progressData.progress}%`;
+                        progressLabel.textContent = `${progressData.status} (${progressData.progress}%)`;
+
+                        // Start polling for this task
+                        startProgressPolling(taskId, conv);
+                    }
+                } catch (error) {
+                    console.error(`Error checking task ${taskId}:`, error);
+                }
+            }
+        }
+
+        // Extract polling logic to separate function
+        function startProgressPolling(taskId, conv) {
+            const progressBarContainer = document.getElementById("progressBarContainer");
+            const progressBar = document.getElementById("progressBar");
+            const progressLabel = document.getElementById("progressLabel");
+
+            const pollInterval = setInterval(async () => {
+                try {
+                    const progressResponse = await fetch(`/task-progress/${taskId}`);
+                    const progressData = await progressResponse.json();
+
+                    if (progressData.error) {
+                        clearInterval(pollInterval);
+                        throw new Error(progressData.error);
+                    }
+
+                    // Update progress bar
+                    progressBar.style.width = `${progressData.progress}%`;
+                    progressLabel.textContent = `${progressData.status} (${progressData.progress}%)`;
+
+                    if (progressData.complete) {
+                        clearInterval(pollInterval);
+
+                        // Update the conversation with citations from the background task
+                        conv.citations = progressData.result;
+                        persistConversations();
+
+                        // Hide progress after a brief delay
+                        setTimeout(() => {
+                            progressBarContainer.style.display = "none";
+                        }, 500);
+                    }
+                } catch (error) {
+                    console.error("Progress polling error:", error);
+                    clearInterval(pollInterval);
+                }
+            }, 1000);
+        }
+
+        // Modify the upload form handler to use the new polling function
+        document.getElementById('uploadForm').addEventListener('submit', async function (e) {
+            // ... existing code until conversation creation ...
+
+            // Start polling for progress in background
+            startProgressPolling(data.task_id, conv);
+
+            // ... rest of existing code ...
+        });
+
+        // Add this to your initialization code (e.g., at the end of the file or in DOMContentLoaded)
+        document.addEventListener('DOMContentLoaded', function () {
+            checkExistingTasks();
+        });
     </script>
 </body>
 

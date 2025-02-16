@@ -18,11 +18,11 @@ from duckduckgo_search import DDGS
 import logging
 import sqlite3
 from bs4 import BeautifulSoup
-
-# New imports from our external modules
+import threading
+from queue import Queue
+import time
 from combined_extraction import extract_references_from_pdf, get_open_access_pdf_url
 
-# Configure logging to display time, log level, and message
 logging.basicConfig(
     level=logging.DEBUG,
     format="[%(asctime)s] %(levelname)s: %(message)s",
@@ -155,6 +155,19 @@ def advanced_extract_and_store_references(pdf_path, upload_id, citations_path, e
     logging.info("Citations data stored at %s", citations_file)
     return citations
 
+# Add these global variables at the top level
+background_tasks = {}
+progress_updates = Queue()
+
+# Add this new class to manage background tasks
+class BackgroundTask:
+    def __init__(self, upload_id):
+        self.upload_id = upload_id
+        self.progress = 0
+        self.status = "Processing"
+        self.result = None
+        self.error = None
+
 @app.route('/upload', methods=['POST'])
 def upload_pdf():
     if 'pdfFile' not in request.files:
@@ -180,27 +193,24 @@ def upload_pdf():
     extraction_data = extract_text_and_figures(str(pdf_path), upload_id, paths['figures_path'])
     logging.info("Completed text and figure extraction")
     
-    # Use the new advanced extraction for references
-    citations_data = advanced_extract_and_store_references(str(pdf_path), upload_id, paths['citations_path'])
-    logging.info("Advanced citations extraction completed: %s", citations_data)
+    # Initialize background task
+    task = BackgroundTask(upload_id)
+    background_tasks[upload_id] = task
     
-    # Save metadata (include citations if desired)
-    metadata = {
-        'upload_id': upload_id,
-        'original_filename': pdf_file.filename,
-        'upload_date': datetime.now().isoformat(),
-        'extraction_data': extraction_data,
-        'citations': citations_data
-    }
-    save_metadata(upload_id, metadata)
-    logging.info("Metadata saved for upload ID: %s", upload_id)
+    # Start background processing
+    thread = threading.Thread(
+        target=process_references_background,
+        args=(str(pdf_path), upload_id, paths['citations_path'], task)
+    )
+    thread.start()
     
     result = {
         "upload_id": upload_id,
         "pdf_url": f"/static/uploads/{upload_id}/pdf/original.pdf",
         "extraction": extraction_data,
-        "citations": citations_data
+        "task_id": upload_id  # Return task_id for progress tracking
     }
+    
     logging.info("Upload endpoint completed for ID: %s", upload_id)
     return jsonify(result)
 
@@ -370,7 +380,11 @@ def delete_upload(upload_id):
 @app.route("/verify-annotation", methods=["POST"])
 def verify_annotation():
     data = request.get_json()
-    provider = data.get("provider")  # Get provider from request
+    provider = data.get("provider")
+    upload_id = data.get("uploadId")  # Get upload_id from request data
+    
+    if not upload_id:
+        return jsonify({"error": "Upload ID is required"}), 400
     
     if not provider or provider not in AI_PROVIDERS:
         return jsonify({"error": "Invalid AI provider"}), 400
@@ -390,8 +404,11 @@ def verify_annotation():
     figures_context = "\n".join([f"Figure {fig['ref']}: Located at page {fig['page_number']}" 
                                 for fig in figures if fig.get('ref')])
     
+    # Get referenced papers context with the correct upload_id
+    referenced_papers_context = get_referenced_papers_context(upload_id)
+    
     prompt = f"""
-    As an AI research assistant, please verify the following annotation based on the Context from the paper, the Available Figures in Context, and web search results:
+    As an AI research assistant, please verify the following annotation based on the Context from the paper, Referenced Papers, Available Figures in Context, and web search results:
 
     Selected Text: "{annotation_text}"
     User's Comment/Claim: "{comment}"
@@ -402,15 +419,20 @@ def verify_annotation():
     Available Figures in Context:
     {figures_context}
 
+    Referenced Papers Context:
+    {referenced_papers_context}
+
     Please structure your response in the following sections:
-    1. Verification: Verify if the comment/claim about the selected text is accurate
+    1. Verification: Verify if the comment/claim about the selected text is accurate in a highly detailed and specific manner
     2. Evidence from Paper: Quote and cite specific parts of the paper that support your verification
-    3. Evidence from Web Sources: Clearly cite any web sources used, including URLs when available
-    4. General Knowledge: Clearly indicate any additional information from your training
-    5. Suggested Corrections: If needed, provide any corrections or clarifications
+    3. Evidence from Referenced Papers: Quote and cite specific parts from referenced papers that support your verification
+    4. Evidence from Web Sources: Clearly cite any web sources used, including URLs when available
+    5. General Knowledge: Clearly indicate any additional information from your training
+    6. Suggested Corrections: If needed, provide any corrections or clarifications
 
     Format your response using markdown for better readability.
     When citing web sources, please use the format: [Source Title](URL)
+    When citing referenced papers, please use the format: [Paper Title] (Year)
     """
     
     print("\n=== SENDING REQUEST TO GEMINI ===")
@@ -442,8 +464,10 @@ def verify_annotation():
 def answer_question():
     try:
         data = request.get_json()
-        if not data:
-            raise ValueError("No data received")
+        upload_id = data.get("uploadId")  # Get upload_id from request data
+        
+        if not upload_id:
+            return jsonify({"error": "Upload ID is required"}), 400
             
         provider = data.get("provider")
         if not provider or provider not in AI_PROVIDERS:
@@ -467,8 +491,11 @@ def answer_question():
             for fig in figures if fig.get('ref')
         ])
         
+        # Get referenced papers context with the correct upload_id
+        referenced_papers_context = get_referenced_papers_context(upload_id)
+        
         prompt = f"""
-        As an AI research assistant, please answer the following question using the Selected Text, Context from the paper, Available Figures in Context, and web search results:
+        As an AI research assistant, please answer the following question using the Selected Text, Context from the paper, Referenced Papers, Available Figures in Context, and web search results:
         
         Question: "{question}"
         
@@ -479,16 +506,21 @@ def answer_question():
         
         Available Figures in Context:
         {figures_context}
+
+        Referenced Papers Context:
+        {referenced_papers_context}
         
         Please structure your response in the following sections:
-        1. Answer: Provide a clear and detailed answer
+        1. Answer: Provide a clear, detailed, and highly specific answer
         2. Evidence from Paper: Quote and cite specific parts of the paper that support your answer
-        3. Evidence from Web Sources: Clearly cite any web sources used, including URLs when available
-        4. General Knowledge: Clearly indicate any additional information from your training
-        5. Additional Context: Include any relevant figures or sections that might be helpful
+        3. Evidence from Referenced Papers: Quote and cite specific parts from referenced papers that support your answer
+        4. Evidence from Web Sources: Clearly cite any web sources used, including URLs when available
+        5. General Knowledge: Clearly indicate any additional information from your training
+        6. Additional Context: Include any relevant figures or sections that might be helpful
         
         Format your response using markdown for better readability.
         When citing web sources, please use the format: [Source Title](URL)
+        When citing referenced papers, please use the format: [Paper Title] (Year)
         """
         
         try:
@@ -507,6 +539,11 @@ def answer_question():
 @app.route("/chat-with-paper", methods=["POST"])
 def chat_with_paper():
     data = request.get_json()
+    upload_id = data.get("uploadId")  # Get upload_id from request data
+    
+    if not upload_id:
+        return jsonify({"error": "Upload ID is required"}), 400
+    
     provider = data.get("provider")
     
     if not provider or provider not in AI_PROVIDERS:
@@ -522,6 +559,9 @@ def chat_with_paper():
     # Combine all page text for context
     full_text = "\n".join([page.get("text", "") for page in paper_context.get("pages", [])])
     
+    # Get referenced papers context with the correct upload_id
+    referenced_papers_context = get_referenced_papers_context(upload_id)
+    
     # Perform web search for relevant information
     try:
         # Use asyncio.run() to handle the async call in sync context
@@ -534,12 +574,15 @@ def chat_with_paper():
     
     prompt = f"""
     You are an AI research assistant helping to answer questions about a research paper which is given to you in the Paper content.
-    Use the following paper content and web search results to answer the user's question.
-    If you use information from web sources, clearly cite them in your response.
+    Use the following paper content, referenced papers, and web search results to answer the user's question.
+    If you use information from web sources or referenced papers, clearly cite them in your response.
     If you cannot answer based on the available information, say so.
     
     Paper content:
     {full_text}
+
+    Referenced Papers:
+    {referenced_papers_context}
     {web_context}
     
     User question: {message}
@@ -547,11 +590,13 @@ def chat_with_paper():
     Please structure your response in the following paragraphs:
     Answer: Provide a clear and detailed answer
     Paper Evidence: Quote and cite specific parts of the paper that support your answer
+    Referenced Papers Evidence: Quote and cite specific parts from referenced papers that support your answer
     Web Sources: If web search results were used, cite the sources and how they contributed
     General Knowledge: Clearly indicate any additional information from your training
     
     Format your response using markdown for better readability.
     When citing web sources, use the format: [Source Title](URL)
+    When citing referenced papers, use the format: [Paper Title] (Year)
     """
     
     try:
@@ -599,7 +644,7 @@ def create_upload_structure(upload_id):
     pdf_path = base_path / 'pdf'
     figures_path = base_path / 'figures'
     chats_path = base_path / 'chats'
-    citations_path = base_path / 'citations'    # New citations folder
+    citations_path = base_path / 'citations'   
     # Create directories
     pdf_path.mkdir(parents=True, exist_ok=True)
     figures_path.mkdir(parents=True, exist_ok=True)
@@ -611,7 +656,7 @@ def create_upload_structure(upload_id):
         'pdf_path': pdf_path,
         'figures_path': figures_path,
         'chats_path': chats_path,
-        'citations_path': citations_path  # Return the path for citations
+        'citations_path': citations_path  
     }
 
 def save_metadata(upload_id, metadata):
@@ -845,6 +890,111 @@ def delete_cited_papers(upload_id, db_path="cited_papers.db"):
         logging.error("Error deleting cited papers for upload_id %s: %s", upload_id, str(e))
     finally:
         conn.close()
+
+def process_references_background(pdf_path, upload_id, citations_path, task):
+    try:
+        # Update initial progress
+        task.progress = 10
+        task.status = "Extracting references..."
+        
+        # Extract references
+        references = extract_references_from_pdf(pdf_path)
+        task.progress = 30
+        
+        if isinstance(references, dict):
+            ref_items = references.items()
+        else:
+            ref_items = ((doi, "") for doi in references)
+        
+        total_refs = len(references) if references else 0
+        processed_refs = 0
+        citations = []
+        
+        for doi, citation_text in ref_items:
+            doi_str = str(doi)
+            citation_text_str = str(citation_text) if citation_text else doi_str
+            
+            # Update progress based on processed references
+            processed_refs += 1
+            task.progress = 30 + int((processed_refs / total_refs) * 60)
+            task.status = f"Processing reference {processed_refs} of {total_refs}"
+            
+            # Process reference
+            oa_pdf_url = get_open_access_pdf_url(doi_str, "your-email@example.com")
+            if oa_pdf_url:
+                full_text = fetch_full_text(oa_pdf_url)
+            else:
+                full_text = None
+            
+            metadata = {
+                "DOI": doi_str,
+                "title": [citation_text_str],
+                "publisher": "",
+                "author": [],
+                "abstract": "",
+                "link": [{"URL": oa_pdf_url}] if oa_pdf_url else [],
+                "URL": oa_pdf_url if oa_pdf_url else ""
+            }
+            store_cited_paper(metadata, full_text, upload_id)
+            citations.append(metadata)
+        
+        # Save citations
+        citations_file = citations_path / "citations.json"
+        with open(citations_file, "w") as f:
+            json.dump(citations, f, indent=2)
+        
+        # Update task completion
+        task.progress = 100
+        task.status = "Complete"
+        task.result = citations
+        
+    except Exception as e:
+        logging.error("Error in background processing: %s", str(e))
+        task.status = "Error"
+        task.error = str(e)
+        task.progress = 100
+
+@app.route('/task-progress/<task_id>')
+def task_progress(task_id):
+    task = background_tasks.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+    
+    return jsonify({
+        "progress": task.progress,
+        "status": task.status,
+        "complete": task.progress == 100,
+        "error": task.error,
+        "result": task.result
+    })
+
+def get_referenced_papers_context(conversation_id):
+    """Fetch context from referenced papers for a given conversation."""
+    try:
+        # Connect to your SQLite database
+        with sqlite3.connect("cited_papers.db") as conn:
+            cursor = conn.cursor()
+            
+            # Query to get referenced papers for the conversation
+            cursor.execute("""
+                SELECT title, year, full_text
+                FROM cited_papers
+                WHERE upload_id = ?
+            """, (conversation_id,))
+            
+            papers = cursor.fetchall()
+            
+            # Format the context
+            context = ""
+            for title, year, full_text in papers:
+                # Add a summary or excerpt of the paper
+                excerpt = full_text[:500] + "..." if len(full_text) > 500 else full_text
+                context += f"\nReferenced Paper: {title} ({year})\nExcerpt: {excerpt}\n"
+            
+            return context
+    except Exception as e:
+        logging.error(f"Error fetching referenced papers context: {str(e)}")
+        return ""
 
 if __name__ == '__main__':
     init_cited_papers_db()

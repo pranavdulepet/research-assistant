@@ -1,1 +1,646 @@
-[]
+[
+  {
+    "id": "f7216191-3422-421e-95c4-cf8199b2dc33",
+    "title": "W5-2-saran2020teacher.pdf",
+    "pdf_url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/pdf/original.pdf",
+    "extraction": {
+      "pages": [
+        {
+          "figures": [],
+          "page_number": 1,
+          "text": "Understanding Teacher Gaze Patterns\nfor Robot Learning\n<br><br>Akanksha Saran\nComputer Science Department\nUniversity of Texas at Austin\nasaran@cs.utexas.edu\n<br><br>Elaine Schaertl Short\nElectrical and Computer Engineering\nUniversity of Texas at Austin\neshort@utexas.com\n<br><br>Andrea Thomaz\nElectrical and Computer Engineering\nUniversity of Texas at Austin\nathomaz@ece.utexas.edu\n<br><br>Scott Niekum\nComputer Science Department\nUniversity of Texas at Austin\nsniekum@cs.utexas.edu\n<br><br>Abstract: Human gaze is known to be a strong indicator of underlying human\nintentions and goals during manipulation tasks. This work studies gaze patterns\nof human teachers demonstrating tasks to robots and proposes ways in which such\npatterns can be used to enhance robot learning. Using both kinesthetic teaching\nand video demonstrations, we identify novel intention-revealing gaze behaviors\nduring teaching. These prove to be informative in a variety of problems ranging\nfrom reference frame inference to segmentation of multi-step tasks. Based on our\n\ufb01ndings, we propose two proof-of-concept algorithms which show that gaze data\ncan enhance subtask classi\ufb01cation for a multi-step task up to 6% and reward infer-\nence and policy learning for a single-step task up to 67%. Our \ufb01ndings provide a\nfoundation for a model of natural human gaze in robot learning from demonstra-\ntion settings and present open problems for utilizing human gaze to enhance robot\nlearning.\n<br><br>Keywords:\nLearning from demonstrations, Eye gaze, Kinesthetic Teaching,\nLearning from observations\n<br><br>1\nIntroduction\n<br><br>Eye gaze is an important social cue that humans use to convey goals, future actions, and mental load\n[1, 2] both in verbal and non-verbal settings. In a teacher-learner setup, parents can scaffold a child\u2019s\nlearning process by directing their attention using gaze, thereby providing structure to the task [3, 4].\nAs in human-human interactions, we hypothesize that gaze can play a role in guiding robot learning\nfrom humans. To understand what role human gaze plays when humans teach robots, we study eye\ngaze behaviors in the context of robot learning from demonstrations (LfD) [5], a powerful, natural\nframework that allows non-experts to communicate rich task knowledge to robots by showing them\nhow to perform a task. We focus on two modalities of LfD for robot manipulation [6]: (1) learning\nvia keyframe-based kinesthetic teaching (KT) in which the joints of a robot are moved by a human\nteacher through speci\ufb01c points or keyframes while the robot records its joint con\ufb01gurations at these\nkeyframes [7], and (2) learning from observation, speci\ufb01cally video demonstrations, in which a robot\ncan passively observe a human performing the task and learn how the demonstrated actions translate\nto its own body to achieve the same goal. Video demonstrations are often freely available on the\nweb for many skills needed in of\ufb01ces or households by robots, which makes them a popular choice\nfor robot learning. Learning algorithms for these techniques typically use trajectories of state-action\npairs directly or indirectly. In addition to knowledge about actions, information about teacher intent\nin the form of eye gaze can enhance learning from demonstrations in terms of generalizing to new\nenvironments and learning with fewer demonstrations.\n<br><br>To use eye gaze for LfD algorithms, it is necessary to understand gaze behavior during the interaction\nfor a speci\ufb01c demonstration type. The psychological literature has characterized gaze behavior of\npeople performing certain manipulation tasks with their own hands, like moving objects around\n<br><br>3rd Conference on Robot Learning (CoRL 2019), Osaka, Japan.\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 2,
+          "text": "obstacles [8] or making tea [9]. These studies show that gaze follows the objects involved in the\ntask [10] and that eye gaze precedes hand motion [8, 11]. These insights can be applicable to video\ndemonstrations for a robot. However, our work is the \ufb01rst to study eye gaze for paired kinesthetic\nteaching (KT) and video demonstrations with an eye toward ways it can be used computationally.\nThus in this work, we aim to characterize the gaze behavior of human teachers demonstrating the\nsame task under both teaching paradigms to a robot. We perform a data collection study in which\nhuman subjects wear an eye tracker to provide accurate ground truth for gaze \ufb01xations. In practice,\nour \ufb01ndings should be useful even without access to a gaze tracker, through the use of vision based\nalgorithms to predict gaze \ufb01xations [12, 13].\n<br><br>In our study, we \ufb01nd that users spend most of their time \ufb01xating on objects which are relevant for\ncompleting the task. Moreover, human gaze can reveal information about the human\u2019s intentions in\notherwise ambiguous situations and help predict the reference frame with respect to which certain\nkeyframes or actions are demonstrated. We also show that human gaze is a meaningful feature to\ndistinguish between keyframes which demarcate semantically different actions (step keyframes) ver-\nsus contiguous keyframes which belong to the same semantic action (non-step keyframes) such as\nmultiple keyframes shaping a pouring motion. These insights open up exciting new avenues for re-\nsearch in learning from human gaze such as automatic segmentation of a task into subtasks, inferring\nintentions and goals of such subtasks, and ef\ufb01cient robot learning. We observe up to 6% improve-\nment in subtask classi\ufb01cation with gaze during a multi-step task for both demonstration types. As\nanother potential application, we show improved goal inference and policy learning for a manipu-\nlation task by augmenting Bayesian inverse reinforcement learning with gaze information from the\ndemonstrator. Policy loss improves by 67.4% for video demonstrations compared to 53.75% for\nKT demonstrations, suggesting that video demonstrations are a richer and more compact source of\nintention-revealing gaze signals.\n<br><br>2\nRelated Work\n<br><br>Human gaze and attention are known to be task-dependent and goal-oriented [14]. Flanagan and\nJohansson [15] demonstrated that adults predict action goals by \ufb01xating on the end location of an\naction before it is reached, both when they execute an action themselves and when they observe\nsomeone else executing it. Single \ufb01xations have identi\ufb01able functions (locating, directing, guiding,\nand checking) related to the action to be taken. Hayhoe and Ballard [10] show that the point of\n\ufb01xation in a given scenario may not be the most visually salient location, but rather corresponds to a\nlocation important for the speci\ufb01cations and spatio-temporal demands of the task. This line of inves-\ntigation has been used in extended visuo-motor tasks such as driving, walking, sports, and making\ntea or sandwiches [16, 17]. It has also been found that eye gaze \ufb01xations are tightly linked in time to\nthe evolution of the task and very few irrelevant areas are \ufb01xated upon [18], implying that the control\nof \ufb01xation comes principally from top-down instructions, not bottom-up salience. Subjects appear\nto use gaze to select speci\ufb01c information required at a speci\ufb01c point of time in a block manipulation\ntask [8, 19]. These studies suggest that gaze would be helpful in predicting the intention or goal\nlocation of human manipulation actions. In our work, we study such human gaze patterns for paired\nvideo and KT demonstrations and recover characteristics speci\ufb01c to demonstrations for robots.\n<br><br>There is also a rich body of work on eye gaze for human-robot interaction [20]. Hart et al. [21]\nuse nonverbal cues including gaze to study timing coordination between humans and robots. Gaze\ninformation has also been shown to enable the establishment of joint attention between the human\nand robot partner, the recognition of human behavior and the execution of anticipatory actions [20].\nHowever, these prior works focus on gaze cues generated by the robot and not on gaze cues from\nhumans. More recently, Aronson et al. [22] studied human gaze behavior for shared manipulation,\nwhere users controlled a robot arm mounted on a wheelchair via a joystick for assistive tasks of\ndaily living. Novel patterns of gaze behaviors were identi\ufb01ed, such as people using visual feedback\nfor aligning the robot arm in a certain orientation and cognitive load being higher for teleoperation\nversus the shared autonomy condition. However, eye gaze behavior of human teachers has not been\nstudied in the context of robot learning from demonstrations.\n<br><br>Prior research in computer vision has established that task and activity recognition in egocentric\nvideos (similar to video demonstrations in our setup) can bene\ufb01t from human gaze [23, 24, 25, 26,\n27]. While some of these works predict human gaze as an intermediate output of a deep network\nclassifying human activities [24, 26], others either jointly predict gaze and action labels with a\n<br><br>2\n<br><br>"
+        },
+        {
+          "figures": [
+            {
+              "ref": null,
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/465f10d3-8cf6-4fc6-9824-891013b22f03.png"
+            },
+            {
+              "ref": null,
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/13d5b772-1097-4841-a145-0005a071ea74.png"
+            },
+            {
+              "ref": null,
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/c24e50bf-a1f4-475a-a8aa-a613c5e3a01c.png"
+            },
+            {
+              "ref": null,
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/a74e71b4-0fb5-42bb-9ea6-6e8e748ee395.png"
+            },
+            {
+              "ref": null,
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/4ba040be-b3bb-4c18-a459-b927c6b9cb6f.png"
+            },
+            {
+              "ref": null,
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/ce555c63-167d-4984-8081-66ed7ad279b7.png"
+            },
+            {
+              "ref": "Figure 2",
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/d7e1f773-4b88-4e57-87f6-6d7dba03d6c3.png"
+            },
+            {
+              "ref": "Figure 1",
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/2ea77c0f-0c56-4455-a2d9-b9e1299f044f.png"
+            },
+            {
+              "ref": "Fig. 1",
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/3b4355bc-5e92-4d23-9121-9441e4c12d11.png"
+            },
+            {
+              "ref": null,
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/af73cd82-2226-4b92-a85e-c4dc7c2d25e3.png"
+            }
+          ],
+          "page_number": 3,
+          "text": "<image: DeviceRGB, width: 600, height: 300, bpc: 8><br><br>(a) Pouring Task\n<br><br><image: DeviceRGB, width: 600, height: 300, bpc: 8><br><br>(b) Placement Task\n<br><br><image: DeviceRGB, width: 1200, height: 600, bpc: 8><br><br><image: DeviceRGB, width: 1200, height: 600, bpc: 8><br><br>(c) Third person view of 2 demonstration modalities\n<br><br><a href='#' class='figure-link' data-figure-url='/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/2ea77c0f-0c56-4455-a2d9-b9e1299f044f.png'>Figure 1</a>: Task completion con\ufb01gurations for: (a) Pouring Task - where pasta from the green cup is\npoured into the red bowl and from the yellow cup into the blue bowl; (b) Placement Task - where\nthe green ladle is placed either to the right of the yellow bowl or to the left of the red plate (note\nboth instructions refer to the same ambiguous location). (c) A third person view of a KT and a video\ndemonstration provided by the same user.\n<br><br><image: DeviceRGB, width: 960, height: 540, bpc: 8><br><br>(a) Reach\n<br><br><image: DeviceRGB, width: 960, height: 540, bpc: 8><br><br>(b) Grasp\n<br><br><image: DeviceRGB, width: 960, height: 540, bpc: 8><br><br>(c) Transport\n<br><br><image: DeviceRGB, width: 960, height: 540, bpc: 8><br><br>(d) Pour\n<br><br><image: DeviceRGB, width: 960, height: 540, bpc: 8><br><br>(e) Return\n<br><br><image: DeviceRGB, width: 960, height: 540, bpc: 8><br><br>(f) Release\n<br><br><a href='#' class='figure-link' data-figure-url='/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/d7e1f773-4b88-4e57-87f6-6d7dba03d6c3.png'>Figure 2</a>: Semantic keyframes at the start of each pouring subtask with corresponding gaze \ufb01xation\npoints (white circle). The reference frames for these subtasks are (i) green cup for reach, grasp,\nrelease; (ii) yellow cup for reach, grasp, release; (iii) red bowl for transport and pour; (iv) blue bowl\nfor transport and pour; (v) white table for return.\n<br><br>probabilistic generative model explicitly modeling properties of gaze behavior [25] or use human\ngaze as a weak supervisory signal in a latent SVM learning framework [27]. By contrast, we show\na proof of concept for gaze aiding classi\ufb01cation of subtasks or actions in egocentric videos of both\nvideo and KT demonstrations for a multi-step task, which has the potential to further enable task\nsegmentation and policy learning per step.\n<br><br>There has also been some recent work on utilizing human eye gaze for learning algorithms. Penkov\net al. [28] used demonstrations from a person wearing an eye tracking hardware along with an\negocentric camera to simultaneously ground symbols to their instances in the environment and learn\nthe appearance of such object instances. Ravichandar et al. [29] use gaze information as a heuristic\nto compute a prior distribution of the goal location for reaching motions in a manipulation task. This\nallows for ef\ufb01cient inference of a multiple-model \ufb01ltering approach for early intention recognition\nof reaching actions by pruning model-matching \ufb01lters that need to be run in parallel. In our work, we\nshow that the use of gaze in conjunction with state-action knowledge can improve reward learning\nvia Bayesian inverse reinforcement learning (BIRL) [30].\n<br><br>3\nData Collection And Analysis\n<br><br>We designed a two-way 2\u00d72 mixed-design human subjects study (user type: novice or expert \u00d7 gaze\n\ufb01xation area: task relevant objects or task-irrelevant object/area) for two household tasks relevant\nto personal robots: pouring and placement. The task layouts and details, which were kept the same\nacross all users, are shown in Fig.1 (a), (b). The order of the tasks and demonstration types were\ncounterbalanced across users. We recruited 20 participants (14 males, 6 females): 10 expert users\nwho had operated or worked with a robot arm, and 10 novice users who had no prior experience\noperating a robot. Each participant was allowed one practice round for each demonstration type\non the task they were assigned to do \ufb01rst. After one round of practicing, participants completed 6\ndemonstrations (3 KT, 3 video) for the pouring task and 4 demonstrations (2 KT, 2 video) for the\nplacement task. This amounted to a total of \u223c27 minutes of video demonstration data and \u223c124\nminutes of KT demonstration data.\n<br><br>Users wore the Tobii Pro Glasses 2 eye tracker and provided demonstrations to our robot which has\na 7 degree of freedom (DOF) Kinova arm, and a Kinect sensor mounted on its head. KT demon-\nstrations required users to physically move the robot\u2019s arm while video demonstrations were given\nstanding in front of the robot, in the robot camera\u2019s view (<a href='#' class='figure-link' data-figure-url='/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/3b4355bc-5e92-4d23-9121-9441e4c12d11.png'>Fig. 1</a>(c)). The eye tracker is equipped\nwith two cameras for each eye to track gaze and one scene camera to record what the user sees. We\ncollected the following data at 50 Hz: (1) raw world camera images in the user\u2019s egocentric view,\n<br><br>3\n<br><br>"
+        },
+        {
+          "figures": [
+            {
+              "ref": "Fig. 4",
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/ebd2b15e-0fa5-4d63-a689-543e873f3349.png"
+            },
+            {
+              "ref": "Fig. 3",
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/9e2a7d94-4df2-4f30-a00c-2f7b9bd45656.png"
+            },
+            {
+              "ref": "Figure 3",
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/5a86223a-d226-4b31-bee8-d0b37822d37e.png"
+            },
+            {
+              "ref": "Fig. 2",
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/adaf4045-6d9d-4de0-a987-63d272fde04a.png"
+            }
+          ],
+          "page_number": 4,
+          "text": "<image: DeviceRGB, width: 480, height: 576, bpc: 8><br><br><image: DeviceRGB, width: 480, height: 576, bpc: 8><br><br>(a) Pouring Task\n<br><br><image: DeviceRGB, width: 480, height: 576, bpc: 8><br><br><image: DeviceRGB, width: 480, height: 576, bpc: 8><br><br>(b) Placement Task\n<br><br><a href='#' class='figure-link' data-figure-url='/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/5a86223a-d226-4b31-bee8-d0b37822d37e.png'>Figure 3</a>: Avg. % time spent by novice & expert users \ufb01xating on task-relevant v/s irrelevant objects.\n<br><br>(2) pixel location of the human\u2019s gaze in the egocentric image, (3) gaze time stamps synchronized\nwith keyframe time stamps along the KT demonstration. Raw gaze locations are processed to extract\nspatio-temporal features of gaze such as \ufb01xations and saccades [31, 32]. Visual \ufb01xations maintain\nthe focus of gaze on a single location. Fixation duration varies based on the task, but one \ufb01xation\nis typically 100 - 500 ms, although it can be as short as 30 ms [33]. Saccades are rapid, ballistic,\nvoluntary eye movements (usually between 20 - 200 ms) that abruptly change the point of \ufb01xation.\nTo \ufb01lter \ufb01xations from raw gaze data, we \ufb01rst detect eye movements with very high speeds (a large\ndistance traversed over a very short period of time is likely a saccade). So we compute object color\nhistograms in a circular area (100-pixel radius) around the 2D eye gaze location obtained from the\neye tracker. The object is identi\ufb01ed as the focus of attention for that instant if the color of the object\nis present in a majority of the pixels around the gaze point detected by the eye tracker, since all\nobjects in our tasks are signi\ufb01cantly different colors. If gaze remains on one such object for more\nthan 100 ms, we consider it a \ufb01xation.\n<br><br>4\nExperiments and Results\n<br><br>4.1\nStatistical Analysis of Gaze Patterns for LfD\nUsers rarely \ufb01xate on task-irrelevant objects:\nConsistent with prior work [34] we \ufb01nd that\nunder both tasks and both forms of demonstrations, users \ufb01xate more on objects which are rele-\nvant to the task. Speci\ufb01cally for the pouring task, the two-way mixed design ANOVA test produces\nF(1, 46) = 100.94, p < 0.01 (video demonstrations) and F(1, 40) = 762.80, p < 0.01 (KT demon-\nstrations) showing task relevance of objects of gaze \ufb01xation. The main effect is signi\ufb01cant for both\ndemonstration types (p < 0.01; <a href='#' class='figure-link' data-figure-url='/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/9e2a7d94-4df2-4f30-a00c-2f7b9bd45656.png'>Fig. 3</a>), i.e. gaze \ufb01xations on task-relevant and task-irrelevant ob-\njects come from different distributions. In KT demonstrations, there is a signi\ufb01cant difference in\n\ufb01xation duration between user type (F(1, 40) = 20.39, p < 0.01) and signi\ufb01cant interaction effect\nbetween task-relevance and user type (F(1, 40) = 13.62, p < 0.01). For the placement task as well,\nsigni\ufb01cant differences are observed between \ufb01xation duration on task relevant and task-irrelevant\nobjects (p < 0.01) for each demonstration type. This provides strong evidence that using gaze dur-\ning demonstrations can help to identify the relative importance of different parts of the workspace.\n<br><br>User \ufb01xations can predict the target object of keyframes for video demonstrations: Video\ndemonstrations contain cleaner gaze \ufb01xation patterns than KT demonstrations, where object \ufb01x-\nations are interspersed with glances at the gripper: the total number of consecutive object-\ufb01xation\nchanges across all KT demonstrations for the pouring task are 12\u00d7 higher than that for video demon-\nstrations. We computed \ufb01xation patterns between distinct keyframes for the \ufb01rst trial of video (man-\nually coded) and KT demonstrations (user provided) for each user. In video demonstrations, \ufb01xa-\ntions between keyframes (<a href='#' class='figure-link' data-figure-url='/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/adaf4045-6d9d-4de0-a987-63d272fde04a.png'>Fig. 2</a>) signifying the semantic action of reaching, grasping, transport and\npouring line up with their target reference frames at least 75% of the time for expert users and at\nleast 70% of the time for novice users (<a href='#' class='figure-link' data-figure-url='/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/ebd2b15e-0fa5-4d63-a689-543e873f3349.png'>Fig. 4</a>).\n<br><br>Novice robot users attend more to the robot\u2019s gripper:\nFor KT demonstrations of the pouring\ntask, we \ufb01nd that novice users on average spend more time \ufb01xating on the gripper than expert robot\nusers (Fig. 5(d)), likely because novice users often struggle to manipulate the robot\u2019s arm, and\nthus focus more on moving the gripper. Even though the results are not statistically signi\ufb01cant\nacross the entire pouring task (p = 0.813) or when observing a single action for the placement task\n<br><br>4\n<br><br>"
+        },
+        {
+          "figures": [
+            {
+              "ref": "Figure 4",
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/998f8a59-ae85-4b5d-98c7-c5b999fa0eee.png"
+            },
+            {
+              "ref": "Fig. 1",
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/c74244d2-cc37-482e-99fe-95856fd3d4de.png"
+            }
+          ],
+          "page_number": 5,
+          "text": "<image: DeviceRGB, width: 800, height: 600, bpc: 8><br><br>(a) Expert Users\n<br><br><image: DeviceRGB, width: 768, height: 576, bpc: 8><br><br>(b) Novice Users\n<br><br><a href='#' class='figure-link' data-figure-url='/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/998f8a59-ae85-4b5d-98c7-c5b999fa0eee.png'>Figure 4</a>: Reference frame detection accuracy for each action of the pouring task.\n<br><br>(p = 0.178), an overall average difference exists between user types. Both expert and novice users\nindependently still spend more time overall on the task-relevant objects compared to the gripper.\n<br><br>Gaze can identify intent for ambiguous actions:\nIn the placement task, the ladle is placed at\nroughly the same location on the table for 2 instructions (left of the red plate or right of the yellow\nbowl) given to the user (<a href='#' class='figure-link' data-figure-url='/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/c74244d2-cc37-482e-99fe-95856fd3d4de.png'>Fig. 1</a>(b)). A different spatial reference frame for placing the ladle should\nchange the user\u2019s internal objective function and we expect this to be re\ufb02ected in the amount of time\nspent \ufb01xating on the object representing the reference frame. For the instruction relative to the red\nplate, we \ufb01nd that all users on average \ufb01xate more on the plate in comparison to the bowl in both\nvideo and KT demonstrations (Fig. 5). They similarly \ufb01xate relatively more on the yellow bowl\nfor the instruction relative to the bowl. Our results for video demonstrations and for novice users of\nKT demonstrations are statistically signi\ufb01cant (p < 0.01). This \ufb01nding aligns with past research on\nunderstanding gaze for natural manipulation behavior, showing strong promise to be utilized as an\nadditional signal for inferring reward functions from demonstrations.\n<br><br>Gaze patterns differ between step and non-step keyframes:\nWe refer to keyframes of KT\ndemonstrations which mark the boundaries of semantically different actions (such as Fig. 2) as\nstep keyframes. We hypothesize gaze \ufb01xations before and after such keyframes will more likely\nconstitute different objects of attention compared to non-step keyframes. The object of attention on\nwhich a user spends the maximum time \ufb01xating 3 seconds before and 3 seconds after every keyframe\nis computed. For novice users, the target object of attention is different before and after 19.44% of\nnon-step keyframes, and 24.51% of step keyframes. For expert users, the target object of attention\nis different before and after 15.79% of non-step keyframes, and 27.85% of step keyframes. This\nimplies an average of 6% and 12% more of step keyframes constitute a change in the object of at-\ntention compared to non-step keyframes for novice and expert users respectively. Even though gaze\nalone might not be suf\ufb01cient in distinguishing between step and non-step keyframes, gaze can be a\nuseful feature in addition to other features for this classi\ufb01cation task. We propose the use of gaze for\nkeyframe classi\ufb01cation as an open problem.\n<br><br>4.2\nUtilizing Human Gaze for Learning\n<br><br>4.2.1\nSubtask Prediction\n<br><br>Many LfD methods focus on the case in which the robot learns a monolithic policy from a demon-\nstration of a simple task with a well-de\ufb01ned beginning and end [5]. However, this approach often\nfails for complex tasks that are dif\ufb01cult to model with a single policy. Several household tasks re-\nquire multiple steps comprising of different actions involving different goals, objects and features. It\nis, therefore, important to segment a complex task into simpler subtasks, and then learn subsequent\npolicies for each subtask. It has been shown that learning a separate policy for each step of a task\ncan lead to improved generalization [35, 36].\n<br><br>Gaze \ufb01xation patterns accumulated and analyzed over subtasks reveal that gaze can predict their\ntarget reference frames well, especially for video demonstrations (Section 4.1). Motivated by this\n\ufb01nding, we show in a proof-of-concept experiment that gaze can improve automatic subtask classi-\n\ufb01cation for multi-step demonstrations, as an intermediate step to multi-step policy learning. We use\n<br><br>5\n<br><br>"
+        },
+        {
+          "figures": [
+            {
+              "ref": null,
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/dbccb62a-d297-4938-8a21-7577600e7d6c.png"
+            },
+            {
+              "ref": "Fig. 6",
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/3e4534aa-a6bb-4252-b737-54956617bd1d.png"
+            },
+            {
+              "ref": "Figure 6",
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/ec997eb1-d870-4633-aad6-77c398aaf77d.png"
+            },
+            {
+              "ref": null,
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/0fa12a0a-9738-4ac9-ae9a-b9da9008fac6.png"
+            },
+            {
+              "ref": "Figure 5",
+              "url": "/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/8e4dd20c-a4a0-48fc-91db-34219f912b53.svg"
+            }
+          ],
+          "page_number": 6,
+          "text": "<image: DeviceRGB, width: 500, height: 600, bpc: 8><br><br>(a) All Users (VD)\n<br><br><image: DeviceRGB, width: 500, height: 600, bpc: 8><br><br>(b) Expert Users (KD)\n<br><br><image: DeviceRGB, width: 500, height: 600, bpc: 8><br><br>(c) Novice Users (KD)\n<br><br><image: DeviceRGB, width: 480, height: 576, bpc: 8><br><br>(d) Gaze on Robot Gripper\n<br><br><a href='#' class='figure-link' data-figure-url='/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/8e4dd20c-a4a0-48fc-91db-34219f912b53.svg'>Figure 5</a>: % of time spent \ufb01xating on the red plate and yellow bowl during placement demonstrations\nfor (a) all users during video demonstrations (VD), (b) expert users and (c) novice users during KT\ndemonstrations (KD). (d) Proportion of time by user expertise spent \ufb01xating on the gripper relative\nto task objects in the pouring and placement tasks during KT demonstrations.\n<br><br><image: DeviceRGB, width: 3663, height: 597, bpc: 8><br><br><a href='#' class='figure-link' data-figure-url='/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/ec997eb1-d870-4633-aad6-77c398aaf77d.png'>Figure 6</a>: Visualization of sub-task prediction for a video demo of the pouring task. Each color\nrepresents a different subtask label. The rows below the demonstration images show ground truth\nlabels (GT), labels from a non-local neural network not using gaze (NL), labels from a non-local\nneural network using gaze (NL + gaze).\n<br><br>two different model architectures for subtask classi\ufb01cation: (i) Non-Local (NL) neural network [37]\nand (ii) Compact Generalized Non-Local (CGNL) neural network [38], which have been shown to\nwork well for activity recognition. We use the ResNet-50 architecture with one NL or one CGNL\nblock, weights initialized from a pre-trained ImageNet model. To incorporate gaze information, we\nuse the normalized gaze coordinates as input before the last fully connected layer for both these net-\nworks. Egocentric videos from the eye tracker are sub-sampled to generate \u223c3K images for video\ndemonstrations and \u223c12K images for KT demonstrations. In a 10-fold cross validation experiment,\naction labels are predicted per frame by each model. Incorporating gaze improves accuracy of sub-\ntask prediction with both models for both demonstration types (Table 1). An example of the action\nlabels predicted is shown in <a href='#' class='figure-link' data-figure-url='/static/uploads/f7216191-3422-421e-95c4-cf8199b2dc33/figures/3e4534aa-a6bb-4252-b737-54956617bd1d.png'>Fig. 6</a>. Even though action classi\ufb01cation at the snippet-level does not\nnecessarily yield clean, contiguous activity segment labels, Goo et al. [39] showed that even with\nmoderate action label noise, reward inference and subsequent policy learning can improve versus\npolicy learning on entire videos without any segmentation.\n<br><br>Video Demos\nKT Demos\n<br><br>NL\nCGNL\nNL\nCGNL\n<br><br>Without Gaze\n86.95\n82.42\n61.95\n63.00\n<br><br>With Gaze\n87.63\n88.88\n62.71\n64.11\n<br><br>Table 1: 10-fold cross validation accuracy of subtask prediction.\n<br><br>4.2.2\nReward Learning\n<br><br>We hypothesize that differences in the amount of time spent looking at an object of interest can\narise from the intent or internal reward of the demonstrator. The role of internal reward in guiding\neye and body movements has been observed in neurophysiological studies [10]. Speci\ufb01cally, neural\nrecordings have shown that vast areas of the brain\u2019s gaze computation system exhibit sensitivity\nto reward signals [10]. To investigate this hypothesis, we examine the possible role of gaze in an\ninverse reinforcement learning (IRL) setting. IRL offers an intuitive means to specify robot goals\nby providing demonstrations from which the robot can recover the reward function to optimize.\nOne method for IRL is Bayesian inverse reinforcement learning (BIRL) [30], which models the\n<br><br>6\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 7,
+          "text": "posterior distribution, P(R|D) \u221d P(D|R)P(R), over reward functions R, given demonstrations\nD. BIRL estimates the probability of state-action pairs of a demonstration set, given a reward,\nto infer this distribution. It assumes the demonstrator follows a softmax policy, resulting in the\nfollowing likelihood function:\n<br><br>P(D|R) =\n\ufffd\n<br><br>(s,a)\u2208D\n<br><br>ecQ\u2217\nR(s,a)\n<br><br>\ufffd\n<br><br>b\u2208A ecQ\u2217\nR(s,b)\n(1)\n<br><br>where c is a parameter representing the degree of con\ufb01dence we have in the demonstrator\u2019s ability to\nchoose the optimal actions [30], and Q\u2217\nR denotes the Q-function of the optimal policy under reward\nR. Markov Chain Monte Carlo (MCMC) sampling is used to obtain samples from the posterior,\nfrom which an estimate of the maximum a posteriori (MAP) reward function RMAP or the mean\nreward function R can be extracted.\n<br><br>Additional information, such as the gaze of the demonstrator, is typically ignored in IRL algorithms.\nWe recover the reward function for different instructions of the placement task (placement with\nrespect to red plate or yellow bowl) using gaze with BIRL. By incorporating gaze information G as\na prior into this framework, we formulate the posterior as follows:\n<br><br>P(R|D, G) \u221d P(D|R)P(R|G)\n(2)\n<br><br>where we model P(R|G) = \u2212 \ufffd\n<br><br>i,j Iij\nfi\nfj and Iij is an indicator function which is 1 when wi < wj\nand fi > fj. fi is the time spent \ufb01xating at object i and wi is the sum of the 5 RBF kernel weights: 4\nRBFs are placed around (top-right, top-left, bottom-right, bottom-left) and 1 is placed at the center of\nthe object i. The RBFs are used to capture spatial information relative to objects [40], and the ratio of\n\ufb01xation times captures relative attention given to objects. The indicator function is 1 if the ranking\nof RBF weight magnitudes for a pair of objects does not match the ranking of the magnitude of\n\ufb01xation times on the respective objects. Given k items of interest on the table, we assume the reward\nfor placement location x is given by:\n<br><br>R(x) =\n<br><br>i=k,j=5\n\ufffd\n<br><br>i=1,j=1\nwij \u00b7 rbf(x, cij, \u03c32\ni )\n(3)\n<br><br>with\nrbf(x, c, \u03c32) = exp(\u2212||x \u2212 c||2/\u03c32).\n(4)\n<br><br>This formulation downweights reward functions in which the relative time spent \ufb01xating near two\nobjects does not match the relative weights assigned to their RBF kernels (i.e. we expect features\nto have larger magnitude weights and in\ufb02uence the reward function more when they are de\ufb01ned\nrelative to objects that were looked at more frequently).\n<br><br>We hypothesize that incorporating gaze in BIRL will help to identify the important object-relations\nfor the task, thereby imposing preferences over reward functions that might otherwise appear equally\ngood when looking at demonstrations without gaze information. We \ufb01nd an improvement in policy\nlearning (Table 2, 3) after performing reinforcement learning on the inferred reward function. Gaze\n\ufb01xation times on the yellow bowl and red plate across 5 ambiguous video and KT demonstrations\nare used to determine how well incorporating the \ufb01xation time performs relative to ignoring the gaze\ninformation (standard BIRL algorithm). Given the instruction for placement, we formulate a ground\ntruth reward in which the ladle should be placed as instructed (e.g.: for the instruction to place\nthe ladle on the right of the bowl, weights of RBFs on the top-right and bottom-right of the bowl\nare set to 0.5 each and all remaining RBF weights are set to 0). With the demonstrated placement\nlocation and gaze \ufb01xation time, the underlying reward function is recovered. The placement policy\nis computed by picking the best position via gradient ascent with random restarts. Generalization is\nmeasured under 100 different con\ufb01gurations of the bowl and plate in simulation.\n<br><br>To evaluate our experiment, we use two metrics: the policy loss and placement loss. The policy loss\nof executing a policy \u03c0 under the reward R is given by the Expected Value Difference:\n<br><br>EV D(\u03c0, R) = V \u03c0\u2217\nR\n\u2212 V \u03c0\nR\n(5)\n<br><br>7\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 8,
+          "text": "\u03c0 = \u03c0MAP is used as the robot\u2019s best guess of the optimal policy under the demonstrator\u2019s reward,\nwhere \u03c0MAP is the optimal policy corresponding to RMAP , the maximum a posteriori reward given\nthe demonstrations so far. \u03c0\u2217 is the optimal policy corresponding to the ground truth reward. The\nplacement loss is computed using the difference between the ground truth placement location and\nthe placement location estimated by \u03c0MAP . We \ufb01nd that both policy loss and placement loss are\nlower when gaze is incorporated into the learning framework. Even with a single ambiguous demon-\nstration, gaze improves performance. Since video demonstrations contain richer gaze signals (Sec.\n4.1), there is an overall greater improvement in both metrics when incorporating gaze from video\ndemonstrations. We envision that the use of gaze information in other learning algorithms would\nalso result in better generalization performance, which we pose as an open problem for future work.\n<br><br>5 KT Demos\n5 Video Demos\n1 KT Demo\n1 Video Demo\n<br><br>Instruction relative to\nBowl\nPlate\nBowl\nPlate\nBowl\nPlate\nBowl\nPlate\n<br><br>Without Gaze\n0.619\n0.081\n0.678\n0.036\n0.073\n0.666\n0.486\n0.184\n<br><br>With Gaze\n0.329\n0.032\n0.046\n0.021\n0.043\n0.225\n0.098\n0.120\n<br><br>Avg improvement w/ Gaze\n53.7%\n67.4%\n53.6%\n57.3%\n<br><br>Table 2: Average policy loss w/ and w/o gaze information in BIRL for the placement task.\n<br><br>5 KT Demos\n5 Video Demos\n1 KT Demo\n1 Video Demo\n<br><br>Instruction relative to\nBowl\nPlate\nBowl\nPlate\nBowl\nPlate\nBowl\nPlate\n<br><br>Without Gaze\n0.494\n0.102\n0.536\n0.064\n0.087\n0.492\n0.383\n0.160\n<br><br>With Gaze\n0.291\n0.063\n0.068\n0.045\n0.066\n0.191\n0.102\n0.122\n<br><br>Avg improvement w/ Gaze\n39.7%\n58.5%\n42.7%\n48.6%\n<br><br>Table 3: Average placement loss w/ and w/o gaze information in BIRL for the placement task.\n<br><br>5\nConclusion\n<br><br>In this work, we showed that human gaze behavior during teaching is informative in a variety of\nways. We \ufb01nd that gaze behaviors exhibited during video demonstrations and KT demonstrations\nare similar in that users mostly \ufb01xate on objects being manipulated or objects with respect to which\nmanipulation occurs. These demonstration modalities differ in terms of gaze \ufb01xations of video\ndemonstrations lining up more accurately with target objects for a semantic action, and being more\ninformative to improve reward inference with Bayesian IRL for a simple placement task. Consis-\ntent with previous \ufb01ndings is the notion that gaze of a user re\ufb02ects their internal reward function.\nParticularly during ambiguous demonstrations, when it is unclear from a single demonstration what\nfeature in the workspace the user is trying to optimize, gaze can reveal intentions which are not\ndirectly observable from the action alone.\n<br><br>We also discover eye gaze patterns speci\ufb01c to demonstrations for robots. Speci\ufb01cally, human gaze\n\ufb01xations during demonstrations differ for step and non-step keyframe segments; and between users\nwith different robot-expertise. Also, gaze \ufb01xations can identify target objects of subtasks part of\na multi-step video demonstration. Motivated by this \ufb01nding, we show utilizing gaze leads to an\nimprovement in subtask classi\ufb01cation from egocentric videos of both demonstration types. Most\nimportantly, our results show an existence proof on the informativeness of gaze data and related\nopen problems for the research community. We envision that gaze information will increasingly\nbe used to improve applications including automatic task segmentation, policy learning, video and\nkinesthetic demonstration alignment, keyframe classi\ufb01cation, and reference frame detection.\n<br><br>Acknowledgments\n<br><br>This work has taken place in the Personal Autonomous Robotics Lab (PeARL) and the Socially\nIntelligent Machines (SIM) Lab at The University of Texas at Austin. PeARL research is supported\nin part by the NSF (IIS-1724157, IIS-1638107, IIS-1749204). SIM research is supported in part\nby NSF (IIS 1724157, IIS 1638107) and ONR (N000141612835, N000141612785). We thank Dr.\nGarrett Warnell (Army Research Laboratory and University of Texas at Austin) for access to the\nTobii Pro Glasses 2 eye tracker and Ruohan Gao (University of Texas at Austin) for advice about\nit\u2019s use.\n<br><br>8\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 9,
+          "text": "References\n<br><br>[1] M. Argyle and M. Cook. Gaze and mutual gaze. 1976.\n<br><br>[2] M. Argyle. Non-verbal communication in human social interaction. 1972.\n<br><br>[3] J. G. Trafton, M. D. Bugajska, B. R. Fransen, and R. M. Ratwani. Integrating vision and\naudition within a cognitive architecture to track conversations.\nIn Proceedings of the 3rd\nACM/IEEE International Conference on Human-Robot Interaction, pages 201\u2013208, 2008.\n<br><br>[4] J. V. Wertsch, N. Minick, and F. J. Arns. The creation of context in joint problem-solving.\n<br><br>1984.\n<br><br>[5] B. D. Argall, S. Chernova, M. Veloso, and B. Browning. A survey of robot learning from\ndemonstration. Robotics and autonomous systems, 57(5):469\u2013483, 2009.\n<br><br>[6] O. Kroemer, S. Niekum, and G. Konidaris. A Review of Robot Learning for Manipulation:\nChallenges, Representations, and Algorithms. arXiv preprint arXiv:1907.03146, 2019.\n<br><br>[7] B. Akgun, M. Cakmak, J. W. Yoo, and A. L. Thomaz. Trajectories and keyframes for kines-\nthetic teaching: A human-robot interaction perspective. In Proceedings of the seventh annual\nACM/IEEE International Conference on Human-Robot Interaction, pages 391\u2013398, 2012.\n<br><br>[8] R. S. Johansson, G. Westling, A. B\u00a8ackstr\u00a8om, and J. R. Flanagan. Eye\u2013hand coordination in\nobject manipulation. Journal of Neuroscience, 21(17):6917\u20136932, 2001.\n<br><br>[9] M. F. Land, N. Mennie, and J. Rusted. Eye movements and the roles of vision in activities of\ndaily living: making a cup of tea. Perception, 28(4):1311\u20131328, 1999.\n<br><br>[10] M. Hayhoe and D. Ballard. Eye movements in natural behavior. Trends in cognitive sciences,\n9(4):188\u2013194, 2005.\n<br><br>[11] M. F. Land and M. Hayhoe. In what ways do eye movements contribute to everyday activities?\n<br><br>Vision research, 41(25-26):3559\u20133565, 2001.\n<br><br>[12] A. Recasens, A. Khosla, C. Vondrick, and A. Torralba. Where are they looking? In Advances\nin Neural Information Processing Systems, pages 199\u2013207, 2015.\n<br><br>[13] E. Chong, N. Ruiz, Y. Wang, Y. Zhang, A. Rozga, and J. M. Rehg.\nConnecting Gaze,\nScene, and Attention: Generalized Attention Estimation via Joint Modeling of Gaze and Scene\nSaliency. arXiv preprint arXiv:1807.10437, 2018.\n<br><br>[14] A. L. Yarbus. Eye movements during \ufb01xation on stationary objects. In Eye movements and\nvision, pages 103\u2013127. Springer, 1967.\n<br><br>[15] J. R. Flanagan and R. S. Johansson. Action plans used in action observation. Nature, 424\n(6950):769, 2003.\n<br><br>[16] M. Hayhoe. Vision using routines: A functional account of vision. Visual Cognition, 7(1-3):\n43\u201364, 2000.\n<br><br>[17] M. M. Hayhoe, A. Shrivastava, R. Mruczek, and J. B. Pelz. Visual memory and motor planning\nin a natural task. Journal of vision, 3(1):6\u20136, 2003.\n<br><br>[18] M. F. Land. Vision, eye movements, and natural behavior. Visual neuroscience, 26(1):51\u201362,\n2009.\n<br><br>[19] D. H. Ballard, M. M. Hayhoe, and J. B. Pelz. Memory representations in natural tasks. Journal\nof Cognitive Neuroscience, 7(1):66\u201380, 1995.\n<br><br>[20] H. Admoni and B. Scassellati. Social eye gaze in human-robot interaction: a review. Journal\nof Human-Robot Interaction, 6(1):25\u201363, 2017.\n<br><br>[21] J. W. Hart, B. Gleeson, M. Pan, A. Moon, K. MacLean, and E. Croft. Gesture, gaze, touch, and\nhesitation: Timing cues for collaborative work. In HRI Workshop on Timing in Human-Robot\nInteraction, Bielefeld, Germany, page 21, 2014.\n<br><br>9\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 10,
+          "text": "[22] R. M. Aronson, T. Santini, T. C. K\u00a8ubler, E. Kasneci, S. Srinivasa, and H. Admoni. Eye-\nhand behavior in human-robot shared manipulation. In Proceedings of the 2018 ACM/IEEE\nInternational Conference on Human-Robot Interaction, pages 4\u201313. ACM, 2018.\n<br><br>[23] H. R. Tavakoli, E. Rahtu, J. Kannala, and A. Borji. Digging Deeper Into Egocentric Gaze\nPrediction. In IEEE Winter Conference on Applications of Computer Vision (WACV), pages\n273\u2013282. IEEE, 2019.\n<br><br>[24] M. Lu, Z.-N. Li, Y. Wang, and G. Pan. Deep Attention Network for Egocentric Action Recog-\nnition. IEEE Transactions on Image Processing, 2019.\n<br><br>[25] A. Fathi, Y. Li, and J. M. Rehg. Learning to recognize daily actions using gaze. In European\nConference on Computer Vision, pages 314\u2013327. Springer, 2012.\n<br><br>[26] Y. Huang, M. Cai, Z. Li, and Y. Sato. Mutual Context Network for Jointly Estimating Egocen-\ntric Gaze and Actions. arXiv preprint arXiv:1901.01874, 2019.\n<br><br>[27] N. Shapovalova, M. Raptis, L. Sigal, and G. Mori. Action is in the eye of the beholder: Eye-\ngaze driven model for spatio-temporal action localization. In Advances in Neural Information\nProcessing Systems, pages 2409\u20132417, 2013.\n<br><br>[28] S. Penkov, A. Bordallo, and S. Ramamoorthy. Physical symbol grounding and instance learn-\ning through demonstration and eye tracking. In IEEE International Conference on Robotics\nand Automation (ICRA), 2017.\n<br><br>[29] H. C. Ravichandar, A. Kumar, and A. Dani. Gaze and motion information fusion for human\nintention inference. Int. J. of Intelligent Robotics and Applications, 2(2):136\u2013148, 2018.\n<br><br>[30] D. Ramachandran and E. Amir. Bayesian inverse reinforcement learning. Urbana, 51(61801):\n1\u20134, 2007.\n<br><br>[31] E. Kasneci, T. K\u00a8ubler, K. Broelemann, and G. Kasneci. Aggregating physiological and eye\ntracking signals to predict perception in the absence of ground truth. Computers in Human\nBehavior, 68:450\u2013455, 2017.\n<br><br>[32] M. Nystr\u00a8om and K. Holmqvist. An adaptive algorithm for \ufb01xation, saccade, and glissade\ndetection in eyetracking data. Behavior research methods, 42(1):188\u2013204, 2010.\n<br><br>[33] K. Holmqvist, M. Nystr\u00a8om, R. Andersson, R. Dewhurst, H. Jarodzka, and J. Van de Weijer.\n<br><br>Eye tracking: A comprehensive guide to methods and measures. OUP Oxford, 2011.\n<br><br>[34] N. Mennie, M. Hayhoe, and B. Sullivan. Look-ahead \ufb01xations: anticipatory eye movements\nin natural tasks. Experimental Brain Research, 179(3):427\u2013442, 2007.\n<br><br>[35] S. Niekum, S. Osentoski, G. Konidaris, and A. G. Barto.\nLearning and generalization of\ncomplex tasks from unstructured demonstrations. In IEEE/RSJ International Conference on\nIntelligent Robots and Systems (IROS), pages 5239\u20135246, 2012.\n<br><br>[36] G. Konidaris, S. Kuindersma, R. Grupen, and A. Barto. Robot learning from demonstration by\nconstructing skill trees. The International Journal of Robotics Research, 31(3):360\u2013375, 2012.\n<br><br>[37] X. Wang, R. Girshick, A. Gupta, and K. He. Non-local neural networks. In Proceedings of the\nIEEE Conference on Computer Vision and Pattern Recognition (CVPR), 2018.\n<br><br>[38] K. Yue, M. Sun, Y. Yuan, F. Zhou, E. Ding, and F. Xu.\nCompact Generalized Non-local\nNetwork. Advances in Neural Information Processing Systems, 2018.\n<br><br>[39] W. Goo and S. Niekum. One-Shot Learning of Multi-Step Tasks from Observation via Activity\nLocalization in Auxiliary Video. IEEE Int. Conf. on Robotics and Automation (ICRA), 2019.\n<br><br>[40] D. S. Brown, Y. Cui, and S. Niekum. Risk-aware active inverse reinforcement learning. Con-\nference on Robot Learning (CoRL), 2018.\n<br><br>[41] D. D. Salvucci and J. H. Goldberg. Identifying \ufb01xations and saccades in eye-tracking protocols.\nIn The Symposium on Eye tracking research & applications, 2000.\n<br><br>10\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 11,
+          "text": "A\nProcedure for User Study\n<br><br>We recruited 20 participants (14 males, 6 females) within our university \u2013 10 expert users who had\noperated or worked with a robot arm, and 10 novice users who had no prior experience operating a\nrobot. The details of the two goal-directed tasks used in our study are as follows:\nPouring task: Two cups (green and yellow) \ufb01lled with pasta and two empty bowls (blue and red)\nare placed at pre-speci\ufb01ed locations on a table in front of the robot. Users pour pasta from the green\ncup to the red bowl, followed by pouring from the yellow cup to the blue bowl. We ask users to\nprovide 3 demonstrations of each type for this task, where demonstration type is counter-balanced\nacross users.\nPlacement task: Four objects are placed on the table in pre-determined locations \u2013 a purple cup,\na yellow bowl \ufb01lled with yellow pasta, a red plate and an orange cup. A large green ladle with a\nlight blue foam support on the edge of its handle (to ease grasping by the robot gripper), is held in\nthe hand of the demonstrator for a video demonstration or gripped by the robot for the kinesthetic\ndemonstration. The user is given an instruction to place the spoon on a relative location on the table\nwith respect to other objects. Each user is given two instructions (order of instructions is counter-\nbalanced across users) for each demonstration type \u2013 (1) place the green ladle to the left side of the\nred plate, and (2) place the green ladle to the right side of the yellow bowl. The red plate and the\nyellow bowl are adjacent to one another on the table with a gap in between them to place the spoon.\nIf the ladle is placed between these two objects on the table, it can be ambiguous to determine which\ninstruction was followed by the user. There were 4 demonstrations provided by each user in this\ntask (2 instructions x 2 demonstration types).\n<br><br>The eye tracker was individually calibrated once at the beginning of the study for each user, and\nsubsequently calibrated in-between demonstrations if there was data loss over the network or the\nuser wanted to take a break. Each participant was allowed one practice round for each demonstration\ntype on the task they were assigned to do \ufb01rst. After one round of practicing, participants completed\n6 demonstrations (3 KT, 3 video) for the pouring task and 4 demonstrations (2 KT, 2 video) for the\nplacement task. All trials of each task and demonstration type pair were completed sequentially,\nand the order of these pairs was fully counterbalanced across the participant pool. A trial of a\nvideo demonstration lasted between 1.5 seconds to about 25 seconds, and a KT demonstration lasted\nbetween 2 minutes to 7 minutes.\n<br><br>For two users the tracker did not calibrate well after multiple trials, hence only a part of the study\ncould be conducted with them. Due to noisy observations or loss of data transmission, we eliminated\ndata from such users, which left us with 8 expert and 8 novice users for the pouring task and 9\nnovice and 7 expert users for the placement task. This amounted to a total of \u223c27 minutes and\n\u223c124 minutes of video and KT demonstration data, respectively.\n<br><br>The tracker is equipped with two cameras for each eye to track the gaze and one scene camera to\nrecord what the user sees. The tracker technology ensures automatic compensation for slipping and\nmakes it possible to track eye gaze reliably in dynamic environments. It has a simple calibration\nprocess in which users stare for a few seconds at the center of a calibration card with concentric\ncircles, provided by the manufacturer. The \ufb01rst-person view and corresponding eye tracking data\nfrom the glasses (Fig. 2) are recorded at 50 Hz. The data is saved onto a pocket-sized recording unit\nthat allows the participant to move around unrestricted.\n<br><br>For KT demonstrations, keyframes are provided by the users themselves. However, they do not\nattach a semantic meaning to them. A single experimenter logs keyframes along with a semantic\nlabel for the action in that keyframe as per their judgment. The semantic labels in the order they are\nused during the pouring task are: (1) start, (2) reach, (3) grasp, (4) transport, (5) pour, (6) return, (7)\nrelease, (8) reach, (9) grasp, (10) transport, (11) pour, (12) return, (13) release, (14) end (Fig. 2).\nThese keyframes are then synchronized with the gaze data time stamps to recover at what point in the\n\ufb01rst person video the keyframes lie. Users provide different levels of granularity in their keyframe\nsegmentations. For example, some users break down the pouring action into multiple keyframes in\nwhich the gripper is being rotated at different angles until all the pasta falls out, and some only rotate\nthe wrist joint once and mark the end of the pouring action as a keyframe. Video demonstrations\nare relatively much shorter in duration, as the user is able to complete the task within seconds.\nTherefore, we manually annotate videos with a \ufb01xed number of semantically meaningful keyframes\nfor the pouring task. Examples of keyframes for the pouring task for a video demonstration type are\n<br><br>11\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 12,
+          "text": "shown in Fig. 2. The placement task is relatively simple, as it only requires logging a single action\nof placing the ladle on the table.\n<br><br>B\nGaze Fixation Filtering\n<br><br>Eye gaze movements can be characterized as: (a) Fixations, (b) Saccades, (c) Smooth pursuits, and\n(d) Vestibulo-ocular movements. Visual \ufb01xations maintain the focus of gaze on a single location.\nFixation duration varies based on the task, but one \ufb01xation is typically 100 - 500 ms, although it can\nbe as short as 30 ms [33]. Saccades are rapid, ballistic voluntary eye movements (usually between 20\n- 200 ms) that abruptly change the point of \ufb01xation. Smooth pursuit movements are slower tracking\nmovements of the eyes that keep a moving stimulus on the fovea. Such movements are voluntary in\nthat the observer can choose to track a moving stimulus, but only highly trained people can make\nsmooth pursuit movements without a target to follow. Smooth pursuit movements are minimally\npresent in our trials and are preserved after \ufb01ltering for saccades. Vestibulo-ocular movements\nstabilize the eyes relative to the external world to compensate for head movements. These re\ufb02ex\nresponses prevent visual images from slipping on the surface of the retina as head position changes.\nThe accelerometer and gyroscope sensors of the eye tracker glasses differentiate between head and\neye movements which eliminates the impact of head movements on eye tracking data.\n<br><br>Salvucci et al. [41] proposed a novel taxonomy of \ufb01xation identi\ufb01cation algorithms and evaluated\nexisting algorithms in the context of this taxonomy. They identify two characteristics\u2014spatial and\ntemporal\u2014 to classify different algorithms for \ufb01xation identi\ufb01cation. For spatial characteristics,\nthree criteria distinguish primary types of algorithms: velocity-based, dispersion-based, and area-\nbased. For temporal characteristics, they include two criteria: whether the algorithm uses duration\ninformation, and whether the algorithm is locally adaptive. The use of duration information is guided\nby the fact that \ufb01xations are rarely less than 100 ms and often in the range of 100-500 ms. In our\nwork, we use velocity-based and area-based criteria under spatial characteristics and duration based\ncriteria under temporal characteristics to \ufb01lter out \ufb01xations from saccades. We \ufb01rst \ufb01lter out eye\nmovements with very high speeds (a large distance traversed over a very short period of time is\nlikely a saccade). Then we compute object color histograms in a circular area (100-pixel radius)\naround the 2D eye gaze location obtained from the eye tracker. The object is identi\ufb01ed as the focus\nof attention for that instant if the color of the object is present in a majority of the pixels around the\ngaze point detected by the eye tracker. If the eye gazes at one such object for more than 100 ms, we\ndeclare it a \ufb01xation.\n<br><br>12\n<br><br>"
+        }
+      ]
+    },
+    "annotations": [],
+    "citations": [
+      {
+        "DOI": "<pdf: http://proceedings.mlr.press/v87/brown18a/brown18a.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: http://proceedings.mlr.press/v87/brown18a/brown18a.pdf>"
+        ]
+      },
+      {
+        "DOI": "<pdf: https://papers.nips.cc/paper/5197-action-is-in-the-eye-of-the-beholder-eye-gaze-driven-model-for-spatio-temporal-action-localization.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: https://papers.nips.cc/paper/5197-action-is-in-the-eye-of-the-beholder-eye-gaze-driven-model-for-spatio-temporal-action-localization.pdf>"
+        ]
+      },
+      {
+        "DOI": "<url: https://dl.acm.org/ft_gateway.cfm?id=3109975&type=pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://dl.acm.org/ft_gateway.cfm?id=3109975&type=pdf>"
+        ]
+      },
+      {
+        "DOI": "<url: https://www.mitpressjournals.org/doi/abs/10.1162/jocn.1995.7.1.66>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://www.mitpressjournals.org/doi/abs/10.1162/jocn.1995.7.1.66>"
+        ]
+      },
+      {
+        "DOI": "<pdf: https://pdfs.semanticscholar.org/be33/ce538cd2b47166d7e8c7fb9c38bae334a92a.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: https://pdfs.semanticscholar.org/be33/ce538cd2b47166d7e8c7fb9c38bae334a92a.pdf>"
+        ]
+      },
+      {
+        "DOI": "<pdf: https://www.cs.utexas.edu/~dana/Hayhoe.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: https://www.cs.utexas.edu/~dana/Hayhoe.pdf>"
+        ]
+      },
+      {
+        "DOI": "<url: https://psycnet.apa.org/record/1973-24485-010>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://psycnet.apa.org/record/1973-24485-010>"
+        ]
+      },
+      {
+        "DOI": "<pdf: https://www.cs.ubc.ca/labs/spin/sites/all/local_pdfs/hart-HRIworkshop-2014.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: https://www.cs.ubc.ca/labs/spin/sites/all/local_pdfs/hart-HRIworkshop-2014.pdf>"
+        ]
+      },
+      {
+        "DOI": "<url: https://ieeexplore.ieee.org/abstract/document/8653357>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://ieeexplore.ieee.org/abstract/document/8653357>"
+        ]
+      },
+      {
+        "DOI": "<pdf: https://link.springer.com/content/pdf/10.3758/BRM.42.1.188.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: https://link.springer.com/content/pdf/10.3758/BRM.42.1.188.pdf>"
+        ]
+      },
+      {
+        "DOI": "<url: https://link.springer.com/article/10.1007/s41315-018-0051-0>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://link.springer.com/article/10.1007/s41315-018-0051-0>"
+        ]
+      },
+      {
+        "DOI": "<url: https://www.cambridge.org/core/journals/visual-neuroscience/article/vision-eye-movements-and-natural-behavior/BF742C49E55B48D84B74AC59BD094395>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://www.cambridge.org/core/journals/visual-neuroscience/article/vision-eye-movements-and-natural-behavior/BF742C49E55B48D84B74AC59BD094395>"
+        ]
+      },
+      {
+        "DOI": "<pdf: https://arxiv.org/pdf/1904.06090.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: https://arxiv.org/pdf/1904.06090.pdf>"
+        ]
+      },
+      {
+        "DOI": "<url: 1907.03146>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 1907.03146>"
+        ]
+      },
+      {
+        "DOI": "<pdf: http://www.jneurosci.org/content/jneuro/21/17/6917.full.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: http://www.jneurosci.org/content/jneuro/21/17/6917.full.pdf>"
+        ]
+      },
+      {
+        "DOI": "<pdf: https://ieeexplore.ieee.org/iel5/6243995/6249474/06249584.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: https://ieeexplore.ieee.org/iel5/6243995/6249474/06249584.pdf>"
+        ]
+      },
+      {
+        "DOI": "<pdf: http://openaccess.thecvf.com/content_ECCV_2018/papers/Eunji_Chong_Connecting_Gaze_Scene_ECCV_2018_paper.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: http://openaccess.thecvf.com/content_ECCV_2018/papers/Eunji_Chong_Connecting_Gaze_Scene_ECCV_2018_paper.pdf>"
+        ]
+      },
+      {
+        "DOI": "<url: utexas.edu>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: utexas.edu>"
+        ]
+      },
+      {
+        "DOI": "<url: https://dl.acm.org/citation.cfm?id=355028>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://dl.acm.org/citation.cfm?id=355028>"
+        ]
+      },
+      {
+        "DOI": "<url: https://www.nature.com/articles/nature01861>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://www.nature.com/articles/nature01861>"
+        ]
+      },
+      {
+        "DOI": "<url: http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.1022.4510&rep=rep1&type=pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.1022.4510&rep=rep1&type=pdf>"
+        ]
+      },
+      {
+        "DOI": "<pdf: https://papers.nips.cc/paper/7886-compact-generalized-non-local-network.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: https://papers.nips.cc/paper/7886-compact-generalized-non-local-network.pdf>"
+        ]
+      },
+      {
+        "DOI": "<pdf: https://www.researchgate.net/profile/George_Konidaris2/publication/261353928_Learning_and_generalization_of_complex_tasks_from_unstructured_demonstrations/links/55c89c7308aebc967df8edc1.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: https://www.researchgate.net/profile/George_Konidaris2/publication/261353928_Learning_and_generalization_of_complex_tasks_from_unstructured_demonstrations/links/55c89c7308aebc967df8edc1.pdf>"
+        ]
+      },
+      {
+        "DOI": "<url: 1807.10437>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 1807.10437>"
+        ]
+      },
+      {
+        "DOI": "<url: http://papers.nips.cc/paper/5848-where-are-they-looking>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: http://papers.nips.cc/paper/5848-where-are-they-looking>"
+        ]
+      },
+      {
+        "DOI": "<pdf: https://users.cs.duke.edu/~gdk/pubs/cst-ijrr-draft.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: https://users.cs.duke.edu/~gdk/pubs/cst-ijrr-draft.pdf>"
+        ]
+      },
+      {
+        "DOI": "<pdf: https://smartech.gatech.edu/bitstream/handle/1853/46311/ECCV12.pdf?sequence=3&isAllowed=y>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: https://smartech.gatech.edu/bitstream/handle/1853/46311/ECCV12.pdf?sequence=3&isAllowed=y>"
+        ]
+      },
+      {
+        "DOI": "<url: http://doi.apa.org/psycinfo/1988-98320-007>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: http://doi.apa.org/psycinfo/1988-98320-007>"
+        ]
+      },
+      {
+        "DOI": "<url: https://www.sciencedirect.com/science/article/pii/S0747563216308160>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://www.sciencedirect.com/science/article/pii/S0747563216308160>"
+        ]
+      },
+      {
+        "DOI": "<pdf: https://arxiv.org/pdf/1901.01874.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: https://arxiv.org/pdf/1901.01874.pdf>"
+        ]
+      },
+      {
+        "DOI": "<url: 1901.01874>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 1901.01874>"
+        ]
+      },
+      {
+        "DOI": "<url: https://link.springer.com/article/10.1007/s00221-006-0804-0>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://link.springer.com/article/10.1007/s00221-006-0804-0>"
+        ]
+      },
+      {
+        "DOI": "<url: https://dl.acm.org/citation.cfm?id=3171287>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://dl.acm.org/citation.cfm?id=3171287>"
+        ]
+      },
+      {
+        "DOI": "<url: https://jov.arvojournals.org/article.aspx?articleid=2158157>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://jov.arvojournals.org/article.aspx?articleid=2158157>"
+        ]
+      },
+      {
+        "DOI": "<pdf: http://rad.inf.ed.ac.uk/data/publications/2017/icra17.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: http://rad.inf.ed.ac.uk/data/publications/2017/icra17.pdf>"
+        ]
+      },
+      {
+        "DOI": "<pdf: http://openaccess.thecvf.com/content_cvpr_2018/papers/Wang_Non-Local_Neural_Networks_CVPR_2018_paper.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: http://openaccess.thecvf.com/content_cvpr_2018/papers/Wang_Non-Local_Neural_Networks_CVPR_2018_paper.pdf>"
+        ]
+      },
+      {
+        "DOI": "<pdf: http://www.aaai.org/Papers/IJCAI/2007/IJCAI07-416.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: http://www.aaai.org/Papers/IJCAI/2007/IJCAI07-416.pdf>"
+        ]
+      },
+      {
+        "DOI": "<pdf: https://arxiv.org/pdf/1907.03146.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: https://arxiv.org/pdf/1907.03146.pdf>"
+        ]
+      },
+      {
+        "DOI": "<url: https://dl.acm.org/citation.cfm?id=1349849>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://dl.acm.org/citation.cfm?id=1349849>"
+        ]
+      },
+      {
+        "DOI": "<url: https://psycnet.apa.org/record/1976-11825-000>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://psycnet.apa.org/record/1976-11825-000>"
+        ]
+      },
+      {
+        "DOI": "<url: https://books.google.com/books?hl=en&lr=&id=5rIDPV1EoLUC&oi=fnd&pg=PR12&dq=Eye+tracking:+A+comprehensive+guideto+methods+and+measures&ots=_w2GV1nPsP&sig=Juj7ktO-3PGK83zIZ6Ic7hNrnhY>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://books.google.com/books?hl=en&lr=&id=5rIDPV1EoLUC&oi=fnd&pg=PR12&dq=Eye+tracking:+A+comprehensive+guideto+methods+and+measures&ots=_w2GV1nPsP&sig=Juj7ktO-3PGK83zIZ6Ic7hNrnhY>"
+        ]
+      },
+      {
+        "DOI": "<pdf: https://arxiv.org/pdf/1806.11244.pdf>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<pdf: https://arxiv.org/pdf/1806.11244.pdf>"
+        ]
+      },
+      {
+        "DOI": "<url: https://link.springer.com/chapter/10.1007/978-1-4899-5379-7_4>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://link.springer.com/chapter/10.1007/978-1-4899-5379-7_4>"
+        ]
+      },
+      {
+        "DOI": "<url: https://www.sciencedirect.com/science/article/pii/S004269890100102X>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://www.sciencedirect.com/science/article/pii/S004269890100102X>"
+        ]
+      }
+    ]
+  }
+]

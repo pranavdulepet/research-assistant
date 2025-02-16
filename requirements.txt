@@ -20,5 +20,6 @@ semanticscholar
 httpx
 beautifulsoup4
 pdfx
-
+celery 
+redis
 
