@@ -8,3 +8,5 @@ data/
 models/
 paper_store/
 cited_papers.db
+static/
+app/
