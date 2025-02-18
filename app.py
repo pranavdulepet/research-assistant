@@ -22,6 +22,11 @@ import threading
 from queue import Queue
 import time
 from combined_extraction import extract_references_from_pdf, get_open_access_pdf_url
+import numpy as np
+from typing import List, Dict
+import torch
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -494,6 +499,51 @@ def verify_annotation():
             "error": str(e)
         }), 500
 
+# Add this new class for document chunking and embedding
+class DocumentStore:
+    def __init__(self):
+        self.vectorizer = TfidfVectorizer(stop_words='english')
+        self.chunks: List[str] = []
+        self.vectors = None
+        
+    def add_document(self, text: str, chunk_size: int = 512, overlap: int = 128):
+        """Split document into overlapping chunks and compute TF-IDF vectors."""
+        # Split into sentences first
+        sentences = text.split('. ')
+        chunks = []
+        current_chunk = []
+        current_length = 0
+        
+        for sentence in sentences:
+            current_chunk.append(sentence)
+            current_length += len(sentence)
+            
+            if current_length >= chunk_size:
+                chunk_text = '. '.join(current_chunk)
+                chunks.append(chunk_text)
+                # Keep last few sentences for overlap
+                current_chunk = current_chunk[-overlap:]
+                current_length = sum(len(s) for s in current_chunk)
+        
+        # Add final chunk if it exists
+        if current_chunk:
+            chunks.append('. '.join(current_chunk))
+        
+        # Store chunks and compute TF-IDF vectors
+        self.chunks = chunks
+        self.vectors = self.vectorizer.fit_transform(chunks)
+        
+    def search(self, query: str, k: int = 3) -> List[str]:
+        """Search for most relevant chunks given a query."""
+        query_vector = self.vectorizer.transform([query])
+        similarities = cosine_similarity(query_vector, self.vectors)
+        top_k_indices = similarities[0].argsort()[-k:][::-1]
+        return [self.chunks[i] for i in top_k_indices]
+
+# Add this to store document embeddings
+document_stores = {}
+
+# Update the answer_question function
 @app.route("/answer-question", methods=["POST"])
 def answer_question():
     try:
@@ -515,15 +565,15 @@ def answer_question():
         selected_text = data.get("selectedText", "")
         figures = data.get("figures", [])
         
-        # Perform web search for relevant information
-        try:
-            # Use asyncio.run() to handle the async call in sync context
-            import asyncio
-            web_results = asyncio.run(perform_web_search(f"{question} {selected_text}"))
-            web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
-        except Exception as e:
-            print(f"Web search error: {str(e)}")
-            web_context = ""
+        # Initialize or get document store for this upload
+        if upload_id not in document_stores:
+            doc_store = DocumentStore()
+            doc_store.add_document(context)
+            document_stores[upload_id] = doc_store
+        
+        # Get most relevant chunks for the question
+        relevant_chunks = document_stores[upload_id].search(question, k=3)
+        context_text = "\n\n".join(relevant_chunks)
         
         # Build context with figures
         figures_context = "\n".join([
@@ -534,6 +584,12 @@ def answer_question():
         # Get referenced papers context
         referenced_papers_context = get_referenced_papers_context(upload_id)
         
+        print(f"Question: {question}\n\n")
+        print(f"Selected Text: {selected_text}\n\n")
+        print(f"Context: {context_text}\n\n")
+        print(f"Figures Context: {figures_context}\n\n")
+        print(f"Referenced Papers Context: {referenced_papers_context}\n\n")
+
         prompt = f"""
         You are an expert AI research assistant tasked with answering questions about a specific annotated part of a paper. Use the following information to craft your response:
 
@@ -541,13 +597,11 @@ def answer_question():
         - **Question:** "{question}"
         - **Selected Text:** "{selected_text}"
         - **Context from the Paper:**  
-        {context}
+        {context_text}
         - **Available Figures in Context:**  
         {figures_context}
         - **Referenced Papers Context:**  
         {referenced_papers_context}
-        - **Web Search Results:**  
-        {web_context}
 
         **Your Response Must Include the Following Sections:**
 
@@ -560,22 +614,25 @@ def answer_question():
         3. **Evidence from Referenced Papers:**  
         Quote and cite specific parts from referenced papers that support your answer.
 
-        4. **Evidence from Web Sources:**  
-        Clearly cite any web sources used, including URLs when available. Use the format: [Source Title](URL).
-
-        5. **General Knowledge:**  
+        4. **General Knowledge:**  
         Indicate any additional relevant information from your training data.
 
-        6. **Additional Context:**  
+        5. **Additional Context:**  
         Include any relevant figures or sections that might be helpful for understanding.
 
         **Formatting Requirements:**
         - Structure your response using Markdown for better readability.
         - When citing web sources, use the format: [Source Title](URL).
+        - When citing referenced papers, use the format: [Paper Title] (Year).
+
+        **Important:**  
+        - Base your response solely on the provided inputs and your general knowledge.
+        - If the available information is insufficient, clearly state that you cannot fully answer the question.
+        - Avoid hallucinating or making up details.
+
         """
         
         try:
-            # For synchronous operation, we'll use asyncio.run()
             import asyncio
             response = asyncio.run(get_ai_response(provider, prompt))
             return jsonify({"answer": response})
@@ -1019,7 +1076,7 @@ def get_referenced_papers_context(conversation_id):
             
             # Query to get referenced papers for the conversation
             cursor.execute("""
-                SELECT title, year, full_text
+                SELECT title, authors, abstract, full_text
                 FROM cited_papers
                 WHERE upload_id = ?
             """, (conversation_id,))
@@ -1028,10 +1085,15 @@ def get_referenced_papers_context(conversation_id):
             
             # Format the context
             context = ""
-            for title, year, full_text in papers:
-                # Add a summary or excerpt of the paper
-                excerpt = full_text[:500] + "..." if len(full_text) > 500 else full_text
-                context += f"\nReferenced Paper: {title} ({year})\nExcerpt: {excerpt}\n"
+            for title, authors, abstract, full_text in papers:
+                if full_text:
+                    excerpt = full_text[:500] + "..." if len(full_text) > 500 else full_text
+                    context += f"\nReferenced Paper: {title}"
+                    if authors:
+                        context += f"\nAuthors: {authors}"
+                    if abstract:
+                        context += f"\nAbstract: {abstract}"
+                    context += f"\nExcerpt: {excerpt}\n"
             
             return context
     except Exception as e:
