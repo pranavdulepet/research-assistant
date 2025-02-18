@@ -824,12 +824,27 @@
             opacity: 0;
             overflow: hidden;
             display: flex;
+            resize: both;
+            min-width: 400px;
+            min-height: 600px;
         }
 
         #chatInterface.visible {
             transform: scale(1);
             opacity: 1;
             display: flex;
+        }
+
+        #chatInterface.expanded {
+            position: fixed;
+            top: 20px !important;
+            right: 20px !important;
+            bottom: 20px !important;
+            width: calc(100% - 40px) !important;
+            height: calc(100% - 40px) !important;
+            max-width: none !important;
+            max-height: none !important;
+            resize: none;
         }
 
         #chatInterface .chat-header {
@@ -1210,6 +1225,53 @@
             color: #000;
             margin-top: 5px;
         }
+
+        /* Math annotation styles */
+        .math-annotation {
+            background-color: rgba(255, 223, 186, 0.3);
+            border-left: 3px solid #FFB74D;
+            padding: 8px;
+            margin: 8px 0;
+        }
+
+        .math-controls {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .math-explanation {
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            padding: 16px;
+            margin-top: 8px;
+            font-size: 0.9em;
+        }
+
+        .math-expression {
+            font-family: 'Computer Modern', serif;
+            background-color: #f1f1f1;
+            padding: 8px;
+            border-radius: 4px;
+            margin: 8px 0;
+            overflow-x: auto;
+        }
+
+        /* Add styles for the expand button */
+        #expandChatButton {
+            background: transparent;
+            color: white;
+            border: none;
+            font-size: 24px;
+            padding: 0;
+            box-shadow: none;
+            margin-right: 8px;
+        }
+
+        #expandChatButton:hover {
+            background: transparent;
+            color: #e0dbdb;
+        }
     </style>
     <!-- Include PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
@@ -1328,6 +1390,9 @@
                 <button id="clearChatButton">
                     <i class="material-icons">delete_sweep</i>
                     Clear
+                </button>
+                <button id="expandChatButton">
+                    <i class="material-icons">fullscreen</i>
                 </button>
                 <button id="closeChatButton">×</button>
             </div>
@@ -1638,6 +1703,10 @@
                     <div class="comment">${ann.comment}</div>
                     <div class="actions">
                         ${actionButtons}
+                        <button onclick="addToChat('${ann.id}');">
+                            <i class="material-icons">chat</i>
+                            Add to Chat
+                        </button>
                     </div>
                 `;
                 list.appendChild(div);
@@ -2109,11 +2178,27 @@
 
             try {
                 const provider = getSelectedProvider();
+                const conv = conversations.find(c => c.id === currentConversationId);
+
+                // Format annotations context
+                const annotationsContext = conv.annotations.map(ann => {
+                    let context = `Selected Text: "${ann.selectedText}"\n`;
+                    context += `${ann.type === 'note' ? 'Note' : 'Question'}: ${ann.comment}\n`;
+                    if (ann.aiVerification) {
+                        context += `AI Verification: ${ann.aiVerification}\n`;
+                    }
+                    if (ann.aiAnswer) {
+                        context += `AI Answer: ${ann.aiAnswer}\n`;
+                    }
+                    return context;
+                }).join('\n---\n');
+
                 const requestData = {
                     message: message,
                     provider: provider,
                     uploadId: currentConversationId,  // Add the upload ID
-                    paper_context: conversations.find(c => c.id === currentConversationId).extraction
+                    paper_context: conversations.find(c => c.id === currentConversationId).extraction,
+                    annotations_context: annotationsContext
                 };
 
                 const response = await fetch('/chat-with-paper', {
@@ -2530,6 +2615,111 @@
         document.addEventListener('DOMContentLoaded', function () {
             checkExistingTasks();
         });
+
+        // Add this function to handle adding annotations to chat
+        function addToChat(annotationId) {
+            const conv = conversations.find(c => c.id === currentConversationId);
+            const ann = conv.annotations.find(a => a.id === annotationId);
+
+            if (!ann) return;
+
+            // Open chat if not already open
+            if (!chatInterface.classList.contains('visible')) {
+                chatButton.click();
+            }
+
+            // Add annotation to chat as system message
+            let messageContent = `**Selected Text:** "${ann.selectedText}"\n\n`;
+            messageContent += `**${ann.type === 'note' ? 'Note' : 'Question'}:** ${ann.comment}\n\n`;
+
+            // Add verification/answer if available
+            if (ann.aiVerification) {
+                messageContent += `**AI Verification:**\n${ann.aiVerification}\n\n`;
+            }
+            if (ann.aiAnswer) {
+                messageContent += `**AI Answer:**\n${ann.aiAnswer}\n\n`;
+            }
+
+            addMessageToChat('system', messageContent);
+
+            // Focus chat input
+            chatInput.focus();
+        }
+
+        // Add this JavaScript code after the existing chat interface code
+        const expandChatButton = document.getElementById('expandChatButton');
+        let isExpanded = false;
+
+        expandChatButton.addEventListener('click', () => {
+            isExpanded = !isExpanded;
+            chatInterface.classList.toggle('expanded');
+
+            // Update icon based on state
+            expandChatButton.querySelector('.material-icons').textContent =
+                isExpanded ? 'fullscreen_exit' : 'fullscreen';
+
+            // Save the current dimensions before expanding
+            if (isExpanded) {
+                chatInterface.dataset.prevWidth = chatInterface.style.width;
+                chatInterface.dataset.prevHeight = chatInterface.style.height;
+            } else {
+                // Restore previous dimensions
+                chatInterface.style.width = chatInterface.dataset.prevWidth || '400px';
+                chatInterface.style.height = chatInterface.dataset.prevHeight || '600px';
+            }
+        });
+
+        // Add resize functionality
+        let isResizing = false;
+        let originalWidth;
+        let originalHeight;
+        let originalX;
+        let originalY;
+
+        chatInterface.addEventListener('mousedown', (e) => {
+            // Check if clicking on the bottom-right corner (resize handle)
+            const rect = chatInterface.getBoundingClientRect();
+            const isClickOnResizeHandle =
+                e.clientX > rect.right - 20 &&
+                e.clientY > rect.bottom - 20;
+
+            if (isClickOnResizeHandle && !isExpanded) {
+                isResizing = true;
+                originalWidth = chatInterface.offsetWidth;
+                originalHeight = chatInterface.offsetHeight;
+                originalX = e.clientX;
+                originalY = e.clientY;
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isResizing) {
+                const width = originalWidth + (e.clientX - originalX);
+                const height = originalHeight + (e.clientY - originalY);
+
+                // Apply minimum dimensions
+                chatInterface.style.width = `${Math.max(400, width)}px`;
+                chatInterface.style.height = `${Math.max(600, height)}px`;
+
+                // Prevent text selection during resize
+                e.preventDefault();
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            isResizing = false;
+        });
+
+        // Update close chat function to reset expanded state
+        function closeChatInterface() {
+            isExpanded = false;
+            chatInterface.classList.remove('expanded', 'visible');
+            expandChatButton.querySelector('.material-icons').textContent = 'fullscreen';
+            setTimeout(() => {
+                chatInterface.style.display = 'none';
+            }, 300);
+            chatButton.style.display = 'block';
+        }
     </script>
 </body>
 

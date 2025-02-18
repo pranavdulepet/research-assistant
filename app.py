@@ -279,27 +279,36 @@ def extract_text_and_figures(pdf_path, upload_id, figures_path):
             height = bbox.height
             bbox_center = ((bbox.x0 + bbox.x1) / 2.0, (bbox.y0 + bbox.y1) / 2.0)
 
-            if width >= SPECIAL_THRESHOLD or height >= SPECIAL_THRESHOLD:
-                filename = f"{uuid.uuid4()}.svg"
-                output_svg_path = figures_path / filename
-                convert_region_to_svg(pdf_path, page_index + 1, (bbox.x0, bbox.y0, bbox.x1, bbox.y1), str(output_svg_path))
-                figure_url = f"/static/uploads/{upload_id}/figures/{filename}"
-            else:
-                base_image = doc.extract_image(xref)
-                image_bytes = base_image["image"]
-                image_ext = base_image["ext"]
-                filename = f"{uuid.uuid4()}.{image_ext}"
-                image_path = figures_path / filename
-                with open(image_path, "wb") as f:
-                    f.write(image_bytes)
-                figure_url = f"/static/uploads/{upload_id}/figures/{filename}"
+            try:
+                if width >= SPECIAL_THRESHOLD or height >= SPECIAL_THRESHOLD:
+                    filename = f"{uuid.uuid4()}.svg"
+                    output_svg_path = figures_path / filename
+                    convert_region_to_svg(pdf_path, page_index + 1, (bbox.x0, bbox.y0, bbox.x1, bbox.y1), str(output_svg_path))
+                    figure_url = f"/static/uploads/{upload_id}/figures/{filename}"
+                else:
+                    base_image = doc.extract_image(xref)
+                    if isinstance(base_image, bool):
+                        # Skip this image if extraction failed
+                        logging.warning(f"Failed to extract image with xref {xref} on page {page_index + 1}")
+                        continue
+                        
+                    image_bytes = base_image["image"]
+                    image_ext = base_image["ext"]
+                    filename = f"{uuid.uuid4()}.{image_ext}"
+                    image_path = figures_path / filename
+                    with open(image_path, "wb") as f:
+                        f.write(image_bytes)
+                    figure_url = f"/static/uploads/{upload_id}/figures/{filename}"
 
-            figures_data.append({
-                "url": figure_url,
-                "bbox": (bbox.x0, bbox.y0, bbox.x1, bbox.y1),
-                "center": bbox_center,
-                "assigned_ref": None
-            })
+                figures_data.append({
+                    "url": figure_url,
+                    "bbox": (bbox.x0, bbox.y0, bbox.x1, bbox.y1),
+                    "center": bbox_center,
+                    "assigned_ref": None
+                })
+            except Exception as e:
+                logging.error(f"Error processing image on page {page_index + 1}: {str(e)}")
+                continue
 
         for ref_obj in references_on_page:
             ref_center = ref_obj["center"]
@@ -381,7 +390,7 @@ def delete_upload(upload_id):
 def verify_annotation():
     data = request.get_json()
     provider = data.get("provider")
-    upload_id = data.get("uploadId")  # Get upload_id from request data
+    upload_id = data.get("uploadId")
     
     if not upload_id:
         return jsonify({"error": "Upload ID is required"}), 400
@@ -397,43 +406,68 @@ def verify_annotation():
     context = data.get("context", "")
     figures = data.get("figures", [])
     
-    print(f"Processing request for annotation: '{annotation_text[:50]}...'")
-    print(f"Number of figures in context: {len(figures)}")
+    # Perform web search for relevant information
+    try:
+        # Use asyncio.run() to handle the async call in sync context
+        import asyncio
+        web_results = asyncio.run(perform_web_search(f"{comment} {annotation_text}"))
+        web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
+    except Exception as e:
+        print(f"Web search error: {str(e)}")
+        web_context = ""
     
     # Build context with figures
     figures_context = "\n".join([f"Figure {fig['ref']}: Located at page {fig['page_number']}" 
                                 for fig in figures if fig.get('ref')])
     
-    # Get referenced papers context with the correct upload_id
+    # Get referenced papers context
     referenced_papers_context = get_referenced_papers_context(upload_id)
     
     prompt = f"""
-    As an AI research assistant, please verify the following annotation based on the Context from the paper, Referenced Papers, Available Figures in Context, and web search results:
+    You are an expert AI research assistant. Your task is to verify the accuracy of a user's comment or claim regarding a specific annotation in a paper. Use only the provided sources—selected text, context from the paper, referenced papers, available figures, and web search results—along with any relevant general knowledge.
 
-    Selected Text: "{annotation_text}"
-    User's Comment/Claim: "{comment}"
-
-    Context from the paper:
+    **Inputs Provided:**
+    - **Selected Text:** "{annotation_text}"
+    - **User's Comment/Claim:** "{comment}"
+    - **Context from the Paper:**  
     {context}
-
-    Available Figures in Context:
+    - **Available Figures in Context:**  
     {figures_context}
-
-    Referenced Papers Context:
+    - **Referenced Papers Context:**  
     {referenced_papers_context}
+    - **Web Search Results:**  
+    {web_context}
 
-    Please structure your response in the following sections:
-    1. Verification: Verify if the comment/claim about the selected text is accurate in a highly detailed and specific manner
-    2. Evidence from Paper: Quote and cite specific parts of the paper that support your verification
-    3. Evidence from Referenced Papers: Quote and cite specific parts from referenced papers that support your verification
-    4. Evidence from Web Sources: Clearly cite any web sources used, including URLs when available
-    5. General Knowledge: Clearly indicate any additional information from your training
-    6. Suggested Corrections: If needed, provide any corrections or clarifications
+    **Instructions:**
+    1. **Verification:**  
+    Verify whether the user's comment/claim about the selected text is accurate. Provide a highly detailed and specific analysis.
 
-    Format your response using markdown for better readability.
-    When citing web sources, please use the format: [Source Title](URL)
-    When citing referenced papers, please use the format: [Paper Title] (Year)
+    2. **Evidence from the Paper:**  
+    Quote and cite specific parts of the paper that support your verification.
+
+    3. **Evidence from Referenced Papers:**  
+    Quote and cite specific parts from referenced papers that support your verification.
+
+    4. **Evidence from Web Sources:**  
+    Clearly cite any web sources used, including URLs when available. Use the format: [Source Title](URL).
+
+    5. **General Knowledge:**  
+    Indicate any additional relevant information from your training.
+
+    6. **Suggested Corrections:**  
+    If applicable, provide any corrections or clarifications to the user's comment/claim.
+
+    **Formatting Requirements:**
+    - Structure your response using Markdown for better readability.
+    - When citing web sources, use the format: [Source Title](URL).
+    - When citing referenced papers, use the format: [Paper Title] (Year).
+
+    **Important:**
+    - Base your analysis solely on the provided inputs.
+    - If the available information is insufficient to verify the claim, explicitly state that.
+    - Do not hallucinate or include any unverified details.
     """
+
     
     print("\n=== SENDING REQUEST TO GEMINI ===")
     try:
@@ -464,7 +498,7 @@ def verify_annotation():
 def answer_question():
     try:
         data = request.get_json()
-        upload_id = data.get("uploadId")  # Get upload_id from request data
+        upload_id = data.get("uploadId")
         
         if not upload_id:
             return jsonify({"error": "Upload ID is required"}), 400
@@ -481,9 +515,15 @@ def answer_question():
         selected_text = data.get("selectedText", "")
         figures = data.get("figures", [])
         
-        print(f"Processing answer for question: '{question}'")
-        print(f"Selected provider: {provider}")
-        print(f"Number of figures in context: {len(figures)}")
+        # Perform web search for relevant information
+        try:
+            # Use asyncio.run() to handle the async call in sync context
+            import asyncio
+            web_results = asyncio.run(perform_web_search(f"{question} {selected_text}"))
+            web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
+        except Exception as e:
+            print(f"Web search error: {str(e)}")
+            web_context = ""
         
         # Build context with figures
         figures_context = "\n".join([
@@ -491,36 +531,47 @@ def answer_question():
             for fig in figures if fig.get('ref')
         ])
         
-        # Get referenced papers context with the correct upload_id
+        # Get referenced papers context
         referenced_papers_context = get_referenced_papers_context(upload_id)
         
         prompt = f"""
-        As an AI research assistant, please answer the following question using the Selected Text, Context from the paper, Referenced Papers, Available Figures in Context, and web search results:
-        
-        Question: "{question}"
-        
-        Selected Text: "{selected_text}"
-        
-        Context from the paper:
-        {context}
-        
-        Available Figures in Context:
-        {figures_context}
+        You are an expert AI research assistant tasked with answering questions about a specific annotated part of a paper. Use the following information to craft your response:
 
-        Referenced Papers Context:
+        **Inputs Provided:**
+        - **Question:** "{question}"
+        - **Selected Text:** "{selected_text}"
+        - **Context from the Paper:**  
+        {context}
+        - **Available Figures in Context:**  
+        {figures_context}
+        - **Referenced Papers Context:**  
         {referenced_papers_context}
-        
-        Please structure your response in the following sections:
-        1. Answer: Provide a clear, detailed, and highly specific answer
-        2. Evidence from Paper: Quote and cite specific parts of the paper that support your answer
-        3. Evidence from Referenced Papers: Quote and cite specific parts from referenced papers that support your answer
-        4. Evidence from Web Sources: Clearly cite any web sources used, including URLs when available
-        5. General Knowledge: Clearly indicate any additional information from your training
-        6. Additional Context: Include any relevant figures or sections that might be helpful
-        
-        Format your response using markdown for better readability.
-        When citing web sources, please use the format: [Source Title](URL)
-        When citing referenced papers, please use the format: [Paper Title] (Year)
+        - **Web Search Results:**  
+        {web_context}
+
+        **Your Response Must Include the Following Sections:**
+
+        1. **Answer:**  
+        Provide a clear, detailed, and highly specific answer to the question.
+
+        2. **Evidence from the Paper:**  
+        Quote and cite specific parts of the paper that support your answer.
+
+        3. **Evidence from Referenced Papers:**  
+        Quote and cite specific parts from referenced papers that support your answer.
+
+        4. **Evidence from Web Sources:**  
+        Clearly cite any web sources used, including URLs when available. Use the format: [Source Title](URL).
+
+        5. **General Knowledge:**  
+        Indicate any additional relevant information from your training data.
+
+        6. **Additional Context:**  
+        Include any relevant figures or sections that might be helpful for understanding.
+
+        **Formatting Requirements:**
+        - Structure your response using Markdown for better readability.
+        - When citing web sources, use the format: [Source Title](URL).
         """
         
         try:
@@ -539,32 +590,24 @@ def answer_question():
 @app.route("/chat-with-paper", methods=["POST"])
 def chat_with_paper():
     data = request.get_json()
-    upload_id = data.get("uploadId")  # Get upload_id from request data
+    upload_id = data.get("uploadId")
     
     if not upload_id:
         return jsonify({"error": "Upload ID is required"}), 400
     
     provider = data.get("provider")
-    
-    if not provider or provider not in AI_PROVIDERS:
-        return jsonify({"error": "Invalid AI provider"}), 400
-    
-    if not AI_PROVIDERS[provider]['enabled']:
-        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
-    
     message = data.get("message", "")
-    print("WEBSEARCH MESSAGE: ", message)
     paper_context = data.get("paper_context", {})
+    annotations_context = data.get("annotations_context", "")
     
     # Combine all page text for context
     full_text = "\n".join([page.get("text", "") for page in paper_context.get("pages", [])])
     
-    # Get referenced papers context with the correct upload_id
+    # Get referenced papers context
     referenced_papers_context = get_referenced_papers_context(upload_id)
     
-    # Perform web search for relevant information
+    # Perform web search
     try:
-        # Use asyncio.run() to handle the async call in sync context
         import asyncio
         web_results = asyncio.run(perform_web_search(message))
         web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
@@ -573,34 +616,33 @@ def chat_with_paper():
         web_context = ""
     
     prompt = f"""
-    You are an AI research assistant helping to answer questions about a research paper which is given to you in the Paper content.
-    Use the following paper content, referenced papers, and web search results to answer the user's question.
-    If you use information from web sources or referenced papers, clearly cite them in your response.
-    If you cannot answer based on the available information, say so.
-    
-    Paper content:
+    You are an expert research assistant dedicated to helping users understand academic papers. You will be provided with the paper's content, annotations, relevant referenced papers, and pertinent web search results. Your task is to answer the user's questions, comments, or claims based solely on this information and your general knowledge.
+
+    Instructions:
+    - **Use only the provided sources:** If you include any information from the paper, referenced papers, or web search results, cite the source clearly.
+    - **Consider existing annotations:** Reference and build upon previous annotations and their AI responses when relevant.
+    - **Be precise and detailed:** Ensure your responses are comprehensive and directly address the user's input.
+    - **Stay on topic:** Your responses should relate only to the content of the paper and the user's question.
+    - **Avoid hallucinations:** If the information is not available in the provided content, explicitly state that you cannot answer based on the available information.
+    - **Format using Markdown:** Structure your answer with Markdown to improve readability.
+
+    Paper Content:
     {full_text}
+
+    Existing Annotations and Their Responses:
+    {annotations_context}
 
     Referenced Papers:
     {referenced_papers_context}
+
+    Web Search Results:
     {web_context}
-    
-    User question: {message}
-    
-    Please structure your response in the following paragraphs:
-    Answer: Provide a clear and detailed answer
-    Paper Evidence: Quote and cite specific parts of the paper that support your answer
-    Referenced Papers Evidence: Quote and cite specific parts from referenced papers that support your answer
-    Web Sources: If web search results were used, cite the sources and how they contributed
-    General Knowledge: Clearly indicate any additional information from your training
-    
-    Format your response using markdown for better readability.
-    When citing web sources, use the format: [Source Title](URL)
-    When citing referenced papers, use the format: [Paper Title] (Year)
+
+    User Question:
+    {message}
     """
     
     try:
-        # Use asyncio.run() to handle the async call in sync context
         response = asyncio.run(get_ai_response(provider, prompt))
         return jsonify({
             "response": response
@@ -995,6 +1037,58 @@ def get_referenced_papers_context(conversation_id):
     except Exception as e:
         logging.error(f"Error fetching referenced papers context: {str(e)}")
         return ""
+
+@app.route("/explain-math", methods=["POST"])
+def explain_math():
+    data = request.get_json()
+    provider = data.get("provider")
+    upload_id = data.get("uploadId")
+    
+    if not upload_id:
+        return jsonify({"error": "Upload ID is required"}), 400
+        
+    if not provider or provider not in AI_PROVIDERS:
+        return jsonify({"error": "Invalid AI provider"}), 400
+    
+    if not AI_PROVIDERS[provider]['enabled']:
+        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+    
+    math_expression = data.get("expression", "")
+    context = data.get("context", "")
+    paper_context = data.get("paper_context", {})
+    
+    # Get referenced papers context
+    referenced_papers_context = get_referenced_papers_context(upload_id)
+    
+    prompt = f"""
+    As an AI research assistant, please explain the following mathematical expression in detail:
+    
+    Mathematical Expression: {math_expression}
+    
+    Context from the paper:
+    {context}
+    
+    Referenced Papers Context:
+    {referenced_papers_context}
+    
+    Please structure your response in the following sections:
+    1. Basic Explanation: Explain what this mathematical expression represents in simple terms
+    2. Variable Definitions: Define each variable and symbol used in the expression
+    3. Mathematical Concepts: Explain the key mathematical concepts involved
+    4. Relationship to Paper: Explain how this expression relates to the paper's content and findings
+    5. Practical Applications: Describe any practical applications or implications
+    6. Related Equations: Mention any related equations or mathematical concepts from the paper
+    
+    Format your response using markdown for better readability.
+    Use LaTeX notation for mathematical expressions where appropriate, enclosed in $ symbols.
+    """
+    
+    try:
+        import asyncio
+        response = asyncio.run(get_ai_response(provider, prompt))
+        return jsonify({"explanation": response})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     init_cited_papers_db()
