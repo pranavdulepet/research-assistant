@@ -1,4 +1,4 @@
-#!/Users/macbookair/projects/research-assistant/.venv/bin/python3.11
+#!/Users/macbookair/projects/research-assistant/.venv/bin/python3
 """Extract pdf structure in XML format"""
 import logging
 import os.path

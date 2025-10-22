@@ -1,1 +1,759 @@
-[]
+[
+  {
+    "id": "4791dfe8-240b-4a5c-87ed-2ed361575551",
+    "title": "rlcr.pdf",
+    "pdf_url": "/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/pdf/original.pdf",
+    "extraction": {
+      "pages": [
+        {
+          "figures": [],
+          "page_number": 1,
+          "text": "BEYOND BINARY REWARDS:\nTRAINING LMS TO\nREASON ABOUT THEIR UNCERTAINTY\n<br><br>Mehul Damani\u2217\nIsha Puri\u2217\nStewart Slocum\nIdan Shenfeld\nLeshem Choshen\nYoon Kim\nJacob Andreas\nMassachusetts Institute of Technology\n<br><br>ABSTRACT\n<br><br>When language models (LMs) are trained via reinforcement learning (RL) to gen-\nerate natural language \u201creasoning chains\u201d, their performance improves on a variety\nof difficult question answering tasks. Today, almost all successful applications of\nRL for reasoning use binary reward functions that evaluate the correctness of LM\noutputs. Because such reward functions do not penalize guessing or low-confidence\noutputs, they often have the unintended side-effect of degrading calibration and\nincreasing the rate at which LMs generate incorrect responses (or \u201challucinate\u201d)\nin other problem domains. This paper describes RLCR (Reinforcement Learn-\ning with Calibration Rewards), an approach to training reasoning models that\njointly improves accuracy and calibrated confidence estimation. During RLCR,\nLMs generate both predictions and numerical confidence estimates after reasoning.\nThey are trained to optimize a reward function that augments a binary correctness\nscore with a Brier score\u2014a scoring rule for confidence estimates that incentivizes\ncalibrated prediction. We first prove that this reward function (or any analogous\nreward function that uses a bounded, proper scoring rule) yields models whose\npredictions are both accurate and well-calibrated. We next show that across diverse\ndatasets, RLCR substantially improves calibration with no loss in accuracy, on\nboth in-domain and out-of-domain evaluations\u2014outperforming both ordinary RL\ntraining and classifiers trained to assign post-hoc confidence scores. While ordinary\nRL hurts calibration, RLCR improves it. Finally, we demonstrate that verbalized\nconfidence can be leveraged at test time to improve accuracy and calibration via\nconfidence-weighted scaling methods. Our results show that explicitly optimizing\nfor calibration can produce more generally reliable reasoning models.\n<br><br>1\nINTRODUCTION\n<br><br>Many recent advances in language models (LMs) have been driven by reasoning models\u2014LMs\ntrained via reinforcement learning (RL) to \u201cthink out loud\u201d in natural language before answering\nquestions. These models have achieved state-of-the-art performance on challenging tasks like math\nand programming (Guo et al., 2025). The standard approach to reasoning training (often referred\nto as reinforcement learning with verifiable rewards, or RLVR) performs RL with a simple binary\ncorrectness reward: Rcorrectness(y, y\u2217) = 1y\u2261y\u2217, where \u2261 checks whether the model\u2019s output y\nmatches ground-truth answer y\u2217. While simple and effective for improving accuracy, this reward\ncomes with a critical limitation: it rewards models equally whether they are confidently correct or\nmerely guessing, and penalizes identically whether they abstain or produce incorrect answers. This\nincentivizes overconfident guessing, undermining trustworthiness.\n<br><br>Consistent with this concern, studies have shown that even when initially well-calibrated, LLMs tend\nto become overconfident following RL training (Leng et al., 2025). Reasoning models, in particular,\ntend to exhibit worsened calibration and increased hallucination rates compared to base models,\nparticularly when trained with reward signals that emphasize only correctness (Kirichenko et al.,\n2025; Yao et al., 2025; OpenAI, 2025). This is a critical limitation in high-stakes domains such as\nhealthcare or law, where models must not only be accurate but also communicate uncertainty when\nappropriate (Omar et al., 2024).\n<br><br>\u2217Equal Contribution. Correspondence to mehul42@mit.edu.\n<br><br>1\n<br><br>arXiv:2507.16806v1  [cs.LG]  22 Jul 2025\n<br><br>"
+        },
+        {
+          "figures": [
+            {
+              "ref": null,
+              "url": "/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/c346d072-7393-4b00-b6a5-6cec64db410d.png"
+            },
+            {
+              "ref": "Figure 1",
+              "url": "/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/7ef41390-2777-43b0-b00f-dadb1d0a53a7.png"
+            }
+          ],
+          "page_number": 2,
+          "text": "<think> The question asks for the song with \nwhich Lulu represented the UK in the 1969 \nEurovision Song Contest. [\u2026] I need to recall \nthe specific song that Lulu performed for the \nUK in 1969. </think> \n<answer> To Sir With Love </answer> \n<analysis> There is a high level of uncertainty \nin this answer because while Lulu did represent \nthe UK in the 1969 Eurovision Song Contest, \nthe specific song she performed is not widely \nknown or easily recalled. [\u2026] but without more \nspecific information, it is difficult to pinpoint \nthe exact song.} </analysis> \n<confidence> 0.3 </confidence>\n<br><br>(a) Example Output\n(b) In-distribution Evaluation\n(c) Out-of-distribution Evaluation\n<br><br><image: ICCBased(RGB,sRGB IEC61966-2.1), width: 749, height: 548, bpc: 8><br><br><image: ICCBased(RGB,sRGB IEC61966-2.1), width: 749, height: 548, bpc: 8><br><br>correctness\nRRLVR =\n<br><br> (Ours)  \n<br><br>correctness   con\ufb01dence  correctness \nRRLCR\n=\n<br><br>\u2212 (\n\u2212\n)2\n<br><br><a href='#' class='figure-link' data-figure-url='/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/7ef41390-2777-43b0-b00f-dadb1d0a53a7.png'>Figure 1</a>: (a): Sample chain-of-thought from a model trained with RLCR, using <think>, <answer>,\n<analysis>, and <confidence> tags. (b) On in-domain evaluation tasks, RLCR improves on\nstandard reasoning training (RLVR) and even slightly outperforms a combination of RLVR and a\ndedicated classifier trained to predict RLVR correctness. (c) When evaluating generalization to novel\ntasks, RLCR improves both accuracy and calibration, while other methods leave accuracy unchanged\nand sometimes harm calibration. All results shown are for HotpotQA, see Section 4 for results on\nmath tasks and additional baselines.\n<br><br>This paper aims to address these limitations by answering two questions:\n<br><br>(1) Can reasoning models be optimized for both correctness and calibration?\n(2) Can the contents of reasoning chains themselves improve calibration?\n<br><br>We approach these questions through the lens of statistical decision theory, specifically the theory\nof proper scoring rules. Given a predictor that produces an output y and a confidence q, a proper\nscoring rule is minimized when q reflects the true probability that y will agree with a ground-truth\noutcome y\u2217 (Gneiting & Raftery, 2007). A canonical example is the Brier score (Brier, 1950):\nRBrier(y, q, y\u2217) = \u2212(q \u2212 1y\u2261y\u2217)2. Proper scoring rules are widely used in forecasting (Waghmare &\nZiegel, 2025), but have seen little application in training LLMs with RL.\n<br><br>Our approach, RLCR (reinforcement learning with calibration rewards), involves a modified\nversion of reasoning training that encourages models to reason about both task correctness and\nuncertainty. To do so, we simply train models to output both answers y and (verbalized) confidence\nscores q, optimizing a combined reward function:\n<br><br>RRLCR(y, q, y\u2217) = Rcorrectness(y, y\u2217) + RBrier(y, q, y\u2217)\n<br><br>= 1y\u2261y\u2217 \u2212 (q \u2212 1y\u2261y\u2217)2 .\n(1)\n<br><br>We show that this approach has several appealing theoretical and empirical properties:\n<br><br>\u2022 RLCR provably incentivizes both accuracy and calibration: RRLCR is maximized when\nmodels output the answer most likely to be correct, along with a calibrated estimate of\ntheir probability of success. In other words, RRLCR is maximized by LM outputs (y, q) for\nwhich y maximizes p(1y\u2261y\u2217), and q = p(1y\u2261y\u2217). We show that such an objective can be\nconstructed if any bounded, proper scoring rule is used for the calibration term. Notably,\nwhile the ubiquitous log-likelihood loss is itself a proper scoring rule, it does not have this\nproperty, and can incentivize models to output incorrect answers.\n<br><br>\u2022 In experiments on factual question answering and mathematical reasoning tasks, RLCR\nmatches the task accuracy of RLVR while substantially improving calibration, on in-domain\nproblems, reducing expected calibration error from 0.37 \u2192 0.03 on HotpotQA (Yang et al.,\n2018) and 0.26 \u2192 0.10 on a collection of math datasets.\n<br><br>\u2022 When these same models are evaluated on their generalization to out-of-domain tasks, RLVR\nsubstantially worsens calibration relative to the base model. By contrast, RLCR substantially\nimproves calibration, outperforming both the base model, a model trained with RLVR, and\na predictor equipped with a second model fine-tuned only to output confidence scores.\n<br><br>\u2022 Verbalized confidence can be incorporated into test-time scaling methods, giving rise to\nimproved ensembling and best-of-N methods. This may be attributed to the fact that RLVR\n<br><br>2\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 3,
+          "text": "also improves the coherence of model predictions across samples: when multiple reasoning\nchains and predictions are generated for a given question, RLCR reduces the variance in\nconfidence scores across reasoning chains that lead to the same answer, and reduces the\nfrequency with which models assign high confidence to contradictory answers.\n<br><br>Together, these results show that existing reasoning training methods can be straightforwardly\nmodified to additionally optimize for calibration, and that this improves in turn improves their\naccuracy, robustness, and scalability.\n<br><br>2\nPRELIMINARIES\n<br><br>Let \u03c0\u03b8 be a language model that maps from prompts x \u2208 X to outputs y \u2208 Y , both of which may\nbe encoded as strings. Given a dataset of prompt\u2013output pairs D = {(xi, y\u2217\ni )} (e.g. questions and\nground-truth answers) and a reward function R : Y \u00d7Y \u2192 R that compares predicted to ground-truth\nanswers, our goal is to improve LM outputs by optimizing:\n<br><br>arg max\n\u03b8\nE(x,y\u2217)\u223cD, y\u223c\u03c0\u03b8(\u00b7|x) R(y, y\u2217) .\n(2)\n<br><br>Reinforcement learning with verifiable rewards (RLVR)\nWhen training reasoning models, a\nstandard choice of R is the binary correctness reward:\n<br><br>Rcorrectness(y, y\u2217) = 1y\u2261y\u2217 ,\n(3)\n<br><br>where 1y\u2261y\u2217 \u2208 {0, 1} is the indicator function that evaluates whether y is correct, i.e. equivalent\n(perhaps modulo formatting details) to y\u2217.\n<br><br>Proper scoring rules\nOften, we want predictors that output not only an answer y, but some scalar\nmeasure q of confidence in this answer.1\n<br><br>A scoring rule measures the quality of a confidence estimate. In the case of modeling binary outcomes\n(e.g. our confidence that a given answer y is correct), a scoring rule is a function S : R \u00d7 {0, 1} \u2192 R\nthat maps a confidence estimate q and an outcome o to a scalar score. A scoring rule is called proper\nif its expected value is minimized by confidence scores that match the true outcome probability:\n<br><br>Ea\u223cp(a) S(p(a), a) \u2264 Ea\u223cp(a) S(q, a)\n(4)\n<br><br>for any q. Perhaps the most familiar example of a proper scoring rule is the log-loss:\n<br><br>Logarithmic score:\nS(q, a) = a log q + (1 \u2212 a) log(1 \u2212 q) .\n(5)\n<br><br>But many other examples exist, including\n<br><br>Brier score:\nS(q, a) = (a \u2212 q)2 ,\n(6)\n<br><br>Spherical score:\nS(q, a) = q\n\ufffd\ufffd\n<br><br>q2 + (1 \u2212 q)2 .\n(7)\n<br><br>What all these scores have in common is the property that they are maximized when confidences q\nmatch the true probability p(a = 1).\n<br><br>3\nMETHOD\n<br><br>The main idea behind our approach is to train language models via reinforcement learning with\na reward that incentivizes both correctness and calibration, by combining a standard correctness\nreward with a reward based on the Brier score. In this approach, models are first prompted to produce\n<br><br>1It is sometimes even more useful to train models that can place a complete distribution over a large set of\npossible answers y. But for very large answer spaces or expensive predictors\u2014like language models performing\nchain-of-thought reasoning\u2014enumerating and scoring all possible answers is generally impractical. This paper\nmainly focuses on models that generate one answer and one confidence score, though see Section 4.6 for one\nway of using this approach to generate and score multiple answers.\n<br><br>3\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 4,
+          "text": "0.0\n0.2\n0.4\n0.6\n0.8\n1.0\n<br><br>Verbalized confidence q\n<br><br>1.0\n<br><br>0.5\n<br><br>0.0\n<br><br>0.5\n<br><br>1.0\n<br><br>Reward\n<br><br>RLVR Reward Rcorrectness\n<br><br>(answer correct)\n<br><br>(answer wrong)\n<br><br>0.0\n0.2\n0.4\n0.6\n0.8\n1.0\n<br><br>Verbalized confidence q\n<br><br>1.0\n<br><br>0.5\n<br><br>0.0\n<br><br>0.5\n<br><br>1.0\n<br><br>Reward\n<br><br>RLCR Reward Rcalibrated (Ours)\n<br><br>(answer correct)\n<br><br>(answer wrong)\n<br><br>Figure 2: (a): RLVR focuses solely on correctness, which can incentivize guessing. (b): RLCR uses\na calibrated reward that jointly optimizes for correctness and calibration.\n<br><br>reasoning chains that produce both answers and confidences estimates (as in Fig. 1a). They are then\ntrained to optimize:\nRRLCR(y, q, y\u2217) = 1y\u2261y\u2217 \u2212 (q \u2212 1y\u2261y\u2217)2 .\n(8)\n<br><br>Intuitively, this reward incentivizes correctness but penalizes models when they output incorrect\nanswers with high confidence or correct answers with low confidence.\n<br><br>It is not immediately obvious that this reward function incentivizes desired LM behavior\u2014because it\ninvolves a tradeoff between accuracy (the first term) and calibration (the second), we might worry\nthat models will learn to output answers certain to be wrong in order to obtain a small calibration\nloss. But in fact, the calibration term in Eq. (8) comes at no cost in accuracy:\n<br><br>Theorem 1. Suppose, for any possible prediction y, that the success indicator 1y\u2261y\u2217 is drawn from\na distribution Bernoulli(py).\n<br><br>Then RRLCR in Eq. (8) satisfies two properties:\n<br><br>1. Calibration incentive. For any y, the expected reward E1y\u2261y\u2217 RRLCR(y, q, y\u2217) is maximized\nwhen q = py.\n<br><br>2. Correctness incentive. Among all calibrated predictions (y, py), expected reward is maxi-\nmized by the prediction whose success probability py is greatest.2\n<br><br>Proof is given in Appendix A.\n<br><br>An important property of Theorem 1 is that we cannot replace the Brier term (q \u2212 1y\u2261y\u2217)2 with\nany proper scoring rule\u2014for example the log loss 1y\u2261y\u2217 log q + (1 \u2212 1y\u2261y\u2217) log(1 \u2212 q) does not\nincentivize correctness. However, as discussed in Appendix A, an analogous version of Theorem 1\nexists for any bounded proper scoring rule.\n<br><br>4\nEXPERIMENTS\n<br><br>Our main experiments aim to evaluate how RLCR empirically changes the accuracy and calibration\nof LMs, both in \u201cin-domain\u201d evaluations on the task used for RL, and \u201cout-of-domain\u201d evaluations\non other question-answering tasks. Additional experiments evaluate interactions between RLCR and\nother test-time reasoning paradigms, the role of reasoning in confidence estimation specifically, and\nthe extent to which RLCR causes LM predictions to become more coherent across predictions.\n<br><br>2Note that statement of the problem does not distinguish between epistemic and aleatoric uncertainty about\nsuccess. Obviously, once y has been predicted, the outcome of evaluation is fully determined, and the objective\nprobability that y \u2261 y\u2217 is either 0 or 1. But an information- or computation-constrained predictor may still\npossess subjective uncertainty.\n<br><br>4\n<br><br>"
+        },
+        {
+          "figures": [
+            {
+              "ref": null,
+              "url": "/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/3869bc79-196d-4e29-8269-c42ba5e3c3b3.png"
+            },
+            {
+              "ref": "Figure 3",
+              "url": "/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/ba4ecfe7-3680-4b32-9356-439189fdf7a1.png"
+            }
+          ],
+          "page_number": 5,
+          "text": "(a)\n(b)\n<br><br><image: ICCBased(RGB,sRGB IEC61966-2.1), width: 3000, height: 1800, bpc: 8><br><br><image: ICCBased(RGB,sRGB IEC61966-2.1), width: 3000, height: 1800, bpc: 8><br><br><a href='#' class='figure-link' data-figure-url='/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/ba4ecfe7-3680-4b32-9356-439189fdf7a1.png'>Figure 3</a>: (a) Reward curves for RLCR (ours) and RLVR. Both correctness and calibration rewards\nimprove under our method, demonstrating simultaneous gains in correctness and calibration. The Brier\nreward is shifted upward by 1 for clarity. (b) Completion lengths during training. The completion\nlengths of our method gradually increase during training as uncertainty reasoning improves.\n<br><br>4.1\nEXPERIMENTAL SETUP\n<br><br>Training Details\nWe use GRPO as base RL algorithm with some modifications (see Appendix B.2).\nFollowing recent work on RL training for LM reasoning (Hu et al., 2025; Guo et al., 2025), we\ninitialize from RL from the base model and do not use any KL regularization. Specifically, we use the\nQwen2.5-7B base model, part of the Qwen family recognized for strong performance in RL tasks (Hu\net al., 2025; Gandhi et al., 2025). For HotPotQA, we use a maximum response length of 1536 while\nfor Math, we use 4096. To enable easier verification and more structured outputs, we augment Eq. (8)\nwith simple format reward that encourages models to enclose CoTs within the right tags.\n<br><br>Methods\nWe evaluate the following methods:\n<br><br>1. Base: The base pre-trained model. We use Qwen2.5-7B Base in our experiments.\n2. RLVR: Initialized from the base model and trained using Rcorrectness with <think> and\n<answer> tags. During evaluation, model is also asked to verbalize confidence.\n<br><br>3. RLVR + BCE Classifier: A confidence classifier trained on outputs from the RLVR model.\nSpecifically, given a dataset of problems, solution CoTs (from RLVR), and correctness\nlabels (x, y, 1y\u2261y\u2217), we train a classifier f\u03b8(x, y) to predict the model\u2019s confidence score\nusing the binary cross-entropy (BCE) loss:\n<br><br>LBCE(\u03b8) = \u2212 E(x,y,1y\u2261y\u2217) [1y\u2261y\u2217 log f\u03b8(x, y) + (1 \u2212 1y\u2261y\u2217) log(1 \u2212 f\u03b8(x, y))]\n(9)\n<br><br>where f\u03b8(x, y) \u2208 (0, 1) is the classifier\u2019s confidence. The classifier is initialized from\nQwen2.5-7B Base and is thus highly expressive. This approach is expensive, as it requires\ntraining and inference of two large models.\n<br><br>4. RLVR + Brier Classifier: Instead of using binary cross-entropy (BCE) loss, we use mean\nsquared error (MSE), which allows more direct optimization of the Brier score:\n<br><br>LBrier(\u03b8) = E(x,y,1y\u2261y\u2217)\n\ufffd\n(f\u03b8(x, y) \u2212 1y=y\u2217)2\ufffd\n(10)\n<br><br>5. RLVR + Probe: Given the final-layer embedding \u03d5(x, y) of the RLVR model, we train a\nlinear probe to predict confidence scores: in Eq. (9), we replace the fine-tuned LM with a\nlinear model:\nf\u03b8(x, y) = log \u03c3(\u03b8\u22a4\u03d5(x, y))\n(11)\nwhere \u03c3(\u00b7) denotes the sigmoid function. This method is closely related to the classifier, but\nreplaces it with a simple, less expressive linear probe.\n<br><br>6. Answer Probability: We generate outputs using RLVR, extract the tokens enclosed within\nthe <answer> tags, and compute their average probability:\n<br><br>AnswerProb(y) =\n1\n|A|\n<br><br>\ufffd\n<br><br>t\u2208A\nP\u03b8(yt | y<t, x)\n(12)\n<br><br>5\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 6,
+          "text": "Here, y = (y1, y2, . . . , yT ) is the full generated sequence. The set A \u2286 {1, . . . , T} denotes\nthe token positions that appear between the <answer> tags. P\u03b8(yt | y<t, x) represents the\nmodel\u2019s probability of generating token yt.\n<br><br>7. RLCR (ours): Initialized from base model and trained using RRLCR.\n<br><br>Evaluation Metrics We use the following evaluation metrics:\n<br><br>1. Accuracy (\u2191): A measure of performance.\n<br><br>2. Area under ROC curve (AUROC) (\u2191): Measures ability of classifier to distinguish between\npositive/negative classes across thresholds.\n<br><br>AUROC =\n\ufffd 1\n<br><br>0\nTPR(FPR\u22121(t)) dt\n(13)\n<br><br>where TPR is the True Positive Rate and FPR is the False Positive Rate.\n<br><br>3. Brier Score (\u2193): Squared difference between confidence and ground truth.\n<br><br>Brier Score = 1\n<br><br>N\n<br><br>N\n\ufffd\n<br><br>i=1\n(qi \u2212 1yi\u2261y\u2217\ni )2\n(14)\n<br><br>4. Expected Calibration Error (ECE) (\u2193): Calibration metric that groups confidences into\nbins and computes difference between the average correctness and confidence.\n<br><br>ECE =\n<br><br>M\n\ufffd\n<br><br>m=1\n<br><br>|Bm|\n<br><br>N\n|acc(Bm) \u2212 conf(Bm)|\n(15)\n<br><br>where M is the number of bins , Bm is the set of samples in bin m, and N is the number of\nsamples. We use M=10.\n<br><br>Evaluation datasets We evaluate our method on benchmarks that highlight distinct sources of\nuncertainty. HotPotQA (Yang et al., 2018) tests calibration under incomplete or distracting evidence,\nwhile SimpleQA (Wei et al., 2024) and TriviaQA (Joshi et al., 2017) probe overconfidence on obscure\nfactual knowledge; GPQA (Rein et al., 2024), Math500 (Hendrycks et al., 2021), GSM8K (Cobbe\net al., 2021), and Big-Math (Albalak et al., 2025) assess calibration in complex, multi-step or\nscientific reasoning, where uncertainty accumulates across steps. CommonsenseQA (Talmor et al.,\n2019) examines confidence in ambiguous, implicit reasoning scenarios. Together, these datasets\ncapture key types of uncertainty, from ambiguous evidence to rare knowledge and complex reasoning.\n<br><br>4.2\nHOTPOTQA\n<br><br>Dataset\nWe use a modified HotPotQA distractor dataset (Yang et al., 2018) with multi-hop questions\nand 10 paragraphs (2 relevant, 8 distractors). To test uncertainty reasoning, HotPotQA-Modified\nremoves 0, 1, or both relevant paragraphs, creating varying information completeness. The dataset is\nevenly split across these conditions, with 8 paragraphs per example. We train on 20,000 examples\nand use exact string match to compute correctness.\n<br><br>In-distribution performance\nFig. 3 shows the training curves for RLCR and RLVR. Both the\ncorrectness and calibration reward for RLCR increase smoothly, indicating that the model is able to\njointly improve accuracy and calibration. Table 1 shows results on the original HotpotQA distractor\ndataset. As expected, RL-trained models outperform off-the-shelf models in multi-hop accuracy.\nRLCR matches RLVR in accuracy, showing that the calibration term does not hurt performance.\nHowever, both the base and RLVR are highly overconfident and poorly calibrated. In contrast, our\nmethod and the classifiers are much better calibrated, with our method slightly ahead. The Answer\nProbability baseline also exhibits poor calibration and overconfidence, as the model typically arrives\nat its answer during CoT reasoning, making the subsequent probability of outputting that answer\nwithin <answer> tags extremely high.\n<br><br>6\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 7,
+          "text": "(a) Models Trained on HotpotQA\n<br><br>Method\nHotpotQA\nO.O.D\n<br><br>Acc.\nAUROC\nBrier\nECE\nAcc.\nAUROC\nBrier\nECE\n<br><br>(\u2191)\n(\u2191)\n(\u2193)\n(\u2193)\n(\u2191)\n(\u2191)\n(\u2193)\n(\u2193)\n<br><br>Base\n39.7%\n0.54\n0.53\n0.53\n53.3%\n0.54\n0.41\n0.40\nRLVR\n63.0%\n0.50\n0.37\n0.37\n53.9%\n0.50\n0.46\n0.46\nRLVR + BCE Classifier\n63.0%\n0.66\n0.22\n0.07\n53.9%\n0.58\n0.27\n0.24\nRLVR + Brier\n63.0%\n0.65\n0.22\n0.09\n53.9%\n0.60\n0.32\n0.33\nRLVR + Probe\n63.0%\n0.55\n0.24\n0.10\n53.9%\n0.53\n0.38\n0.38\nAnswer Prob\n63.0%\n0.72\n0.36\n0.36\n53.9%\n0.60\n0.42\n0.42\nRLCR (ours)\n62.1%\n0.69\n0.21\n0.03\n56.2%\n0.68\n0.21\n0.21\n<br><br>(b) Models Trained on Big-Math\n<br><br>Method\nMath\nO.O.D Averaged\n<br><br>Acc.\nAUROC\nBrier\nECE\nAcc.\nAUROC\nBrier\nECE\n<br><br>(\u2191)\n(\u2191)\n(\u2193)\n(\u2193)\n(\u2191)\n(\u2191)\n(\u2193)\n(\u2193)\n<br><br>Base\n56.1%\n0.56\n0.40\n0.39\n47.8%\n0.53\n0.46\n0.45\nRLVR\n72.9%\n0.47\n0.28\n0.26\n52.5%\n0.52\n0.49\n0.49\nRLVR +Classifier\n72.9%\n0.78\n0.15\n0.10\n52.5%\n0.55\n0.34\n0.33\nRLVR +Brier-Classifier\n72.9%\n0.78\n0.15\n0.10\n52.5%\n0.57\n0.28\n0.27\nRLVR +Probe\n72.9%\n0.65\n0.19\n0.13\n52.5%\n0.53\n0.33\n0.30\nAnswer Prob\n72.9%\n0.52\n0.26\n0.26\n52.5%\n0.52\n0.44\n0.43\nRLCR (ours)\n72.7%\n0.67\n0.17\n0.10\n50.9%\n0.60\n0.28\n0.25\nSFT+RLCR (ours)\n72.2%\n0.78\n0.14\n0.08\n43.8%\n0.66\n0.24\n0.18\n<br><br>Table 1: Accuracy and calibration metrics for models trained on HotpotQA and Big-Math.\n(a) Performance on HotpotQA and 6 out-of-distribution (O.O.D) datasets. RLCR achieves\ncompetitive accuracy and significantly outperforms all baselines in calibration, especially on O.O.D.\ndatasets, demonstrating the benefits of jointly optimizing accuracy and calibration. (b) Performance\non Math and 5 out-of-distribution (O.O.D.) datasets. Math results are averaged over 3 datasets:\nMath-500, GSM8K and Big-Math. SFT+RLCR variant achieves the best calibration across both\nin-distribution and O.O.D settings, demonstrating the benefit of SFT warmup. However, this comes\nat the cost of reduced generalization accuracy, possibly due to catastrophic forgetting. RLCR offers a\nstronger trade-off in O.O.D settings, maintaining competitive accuracy while improving calibration\nrelative to all baselines.\n<br><br>Generalization\nWe evaluate generalization performance on six datasets: TriviaQA, SimpleQA,\nMATH500, GSM8K, CommonsenseQA, and GPQA. Table 1 presents the average performance across\nthese datasets (individual results in Appendix D). The base model\u2019s accuracy closely matches that\nof the models trained with RL, indicating that RL training on HotpotQA does not enhance OOD\nreasoning. Moreover, RLVR actually hurts calibration relative to the base model on out-of-distribution\ntasks. In contrast, RLCR achieves substantial gains over all baselines across calibration metrics\nwhile maintaining (or slightly improving) on task accuracy. We hypothesize that better calibration\ngeneralization of RLCR could be due to:\n<br><br>1. Uncertainty in chain-of-thought reasoning Reasoning about uncertainty can improve\ncalibration by allowing reflection on confidence, in line with recent work (Yoon et al., 2025).\n<br><br>2. Training dynamics of RL During RL training, the model\u2019s confidence analysis and scores\nhave to constantly adapt to the model\u2019s improving task performance. This non-stationarity\nmight lead to more robust learning and better generalization.\n<br><br>7\n<br><br>"
+        },
+        {
+          "figures": [
+            {
+              "ref": "Fig. 1",
+              "url": "/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/8e1be6ec-7c16-4642-bf37-5fba1358550b.png"
+            },
+            {
+              "ref": "Figure 4",
+              "url": "/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/9d617e51-2d6a-41f6-b571-1c1216ce9fd4.png"
+            }
+          ],
+          "page_number": 8,
+          "text": "(a)\n(b)\n<br><br><image: ICCBased(RGB,sRGB IEC61966-2.1), width: 1214, height: 931, bpc: 8><br><br><image: ICCBased(RGB,sRGB IEC61966-2.1), width: 1210, height: 910, bpc: 8><br><br><a href='#' class='figure-link' data-figure-url='/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/9d617e51-2d6a-41f6-b571-1c1216ce9fd4.png'>Figure 4</a>: Test-time scaling curves. (a) Accuracy vs Number of Samples (N). Accuracy improves\nfor all methods with increasing compute. Confidence-weighted majority vote outperforms both vanilla\nmajority vote and max-confidence, highlighting complementary benefits of combining voting with\nconfidence scores. (b) Brier Scores vs Ensemble Size (K). Here we evalute the effect of applying\ntest-time scaling to confidence estimation alone, resampling multiple analyses (blue text in <a href='#' class='figure-link' data-figure-url='/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/8e1be6ec-7c16-4642-bf37-5fba1358550b.png'>Fig. 1</a>).\nCalibration improves as the size of the analysis ensemble grows.\n<br><br>3. Shared representations Using a single model for both solution generation and calibration\nallows the calibration task to leverage internal representations used by the solution generating\nprocess, possibly improving generalization.\n<br><br>4.3\nMATH\n<br><br>Dataset\nWe use Big-Math (Albalak et al., 2025), a large, curated training dataset for RL containing\nover 250,000 math problems, including questions from benchmarks such as Math and GSM8K. We\nretain problems for which the LLaMA-8B solve rate (provided in the dataset) is between 0-70% and\nrestrict the dataset to problems with numerical answers, enabling near-perfect automatic verification.\nOur final training set consists of 15,000 problems. We compute correctness using math-verify3, a\nrobust expression evaluation system.\n<br><br>SFT Warmup\nWhile applying RL directly to the base model improves calibrated reward, the\nuncertainty analyses produced in Math remain qualitatively generic, often lacking reasoning tied\nto specific solution steps (See Appendix D.2 for an example). To enhance their quality, we train a\nvariant with a lightweight SFT warmup phase before RL. Specifically, we generate solutions from\nthe base model on 500 examples and prompt Deepseek-R1 to produce uncertainty analyses for them.\nFurther details in Appendix B.2.\n<br><br>Results\nOn Math benchmarks (averaged over GSM8K, Math, and Big-Math), all RL methods\nimprove accuracy significantly over the base model. SFT+RLCR achieves the best calibration,\nslightly surpassing the classifiers, while base and RLVR remain poorly calibrated. Out-of-distribution\n(TriviaQA, SimpleQA, CommonsenseQA, GPQA, HotPotQA), the accuracies of RLCR and RLVR\nare marginally better than the base model, but surprisingly the accuracy of the SFT+RLCR model\ndrops significantly, possibly due to catastrophic forgetting induced by SFT warmup. Despite this,\nSFT+RLCR achieves the strongest calibration. RLCR offers a stronger trade-off in O.O.D. settings,\nmaintaining accuracy while matching or outperforming all baselines on calibration.\n<br><br>4.4\nCAN VERBALIZED CONFIDENCES BE USED FOR TEST-TIME SCALING?\n<br><br>We next evaluate whether confidence scores from RLCR can be incorporated into test-time scaling\nalgorithms to yield improvements in both accuracy and calibration.\n<br><br>3https://github.com/huggingface/Math-Verify\n<br><br>8\n<br><br>"
+        },
+        {
+          "figures": [
+            {
+              "ref": "Figure 5",
+              "url": "/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/43eb91da-f1a3-41fe-83b4-ddeccb89d769.png"
+            },
+            {
+              "ref": "Fig. 4a",
+              "url": "/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/9c53f710-869a-4960-9314-c9c994631a4b.png"
+            }
+          ],
+          "page_number": 9,
+          "text": "(a)\n(b)\n<br><br><image: ICCBased(RGB,sRGB IEC61966-2.1), width: 1920, height: 1440, bpc: 8><br><br><image: ICCBased(RGB,sRGB IEC61966-2.1), width: 1920, height: 1440, bpc: 8><br><br><a href='#' class='figure-link' data-figure-url='/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/43eb91da-f1a3-41fe-83b4-ddeccb89d769.png'>Figure 5</a>: Brier scores (a) and ECE (b) of baseline / analysis classifiers on HotPotQA-Modified\nacross three model sizes. Analysis classifiers outperform baselines at smaller sizes, suggesting that\nuncertainty CoT is essential for better calibration when capacity is limited.\n<br><br>Accuracy\nGiven N responses y1, y2, ...yN and a reward model r(x, y), best-of-N selects the\nresponse with highest reward:\n<br><br>ychosen =\narg max\n{y1,...,yN}\u223cp(\u00b7|x)\nR(x, yi) .\n(16)\n<br><br>Similarly, majority vote selects the most frequent answer among the N answers. Prior work has also\ncombined the two, yielding weighted majority vote, where the voting is weighted using scores from\nthe reward model.\n<br><br>Our key insight is that the verbalized confidence q output by the model can serve as an effective\nproxy reward. In best-of-N, we can select the response with the highest verbalized confidence from\nthe set of N candidates. We refer to this as max-confidence. Likewise, we extend majority vote\nto a confidence-weighted majority vote, where each response\u2019s vote is weighted by its associated\nconfidence score. Importantly, both these approaches do not require any additional supervision or\nexternal reward models.\n<br><br>We use the RLCR model trained on Hotpot for generation, and plot average accuracy across the 7\ndatasets used in Table 1. <a href='#' class='figure-link' data-figure-url='/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/9c53f710-869a-4960-9314-c9c994631a4b.png'>Fig. 4a</a> shows that accuracy improves with compute across all methods.\nConfidence-weighted majority vote outperforms both vanilla majority voting and max-confidence,\nindicating that combining confidence with voting can yield complementary benefits. Although max-\nconfidence underperforms both voting variants, it is more flexible and remains valuable in settings\nwhere aggregation across responses (needed for voting) is infeasible, such as program synthesis or\nother open-ended generation tasks. Overall, the accuracy gains of these scaling algorithms are closely\ntied to calibration\u2014improvements in calibration will translate to improvements in accuracy.\n<br><br>Calibration\nIn our structured RLCR CoT, models first output a solution, followed by an analysis\nand confidence score. To improve confidence scores for a fixed answer y, we sample K analysis\nCoTs z1, . . . , zK \u223c p(\u00b7 | x, y), each producing a verbalized confidence qi. We then ensemble these\nconfidences to obtain the aggregated confidence estimate \u00afq = 1\n<br><br>K\n\ufffd\n<br><br>i qi. Figure 4b plots Brier score\n(averaged over 7 datasets) as a function of ensemble size K. We observe a decrease in Brier score with\nlarger ensembles, indicating that ensembling over uncertainty CoTs effectively improves calibration.\nFor a given solution and answer, ensembling verbalized confidences is lightweight and only requires\nadditional sampling, unlike classifiers or probes, which would require training multiple heads/models.\n<br><br>4.5\nDOES REASONING IMPROVE CALIBRATION?\n<br><br>Recent work has shown that CoT reasoning can be unfaithful, with generated CoTs that do not\ninfluence their final answers (Chen et al., 2025). This raises the possibility that uncertainty analysis\nmay not meaningfully inform the verbalized confidence score. To test this, we train two classifiers on\nHotPotQA-Modified:\n<br><br>9\n<br><br>"
+        },
+        {
+          "figures": [
+            {
+              "ref": "Figure 6",
+              "url": "/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/fa145158-21fa-4edb-8183-34f2e7bdd183.png"
+            },
+            {
+              "ref": "Figure 5",
+              "url": "/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/97e2fe7c-c500-460f-bf4d-2dd82d673dcb.png"
+            }
+          ],
+          "page_number": 10,
+          "text": "(a)\n(b)\n<br><br><image: DeviceRGB, width: 2367, height: 1468, bpc: 8><br><br><image: DeviceRGB, width: 1712, height: 1148, bpc: 8><br><br><a href='#' class='figure-link' data-figure-url='/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/fa145158-21fa-4edb-8183-34f2e7bdd183.png'>Figure 6</a>: (a): Distribution of standard deviation in confidence across multiple uncertainty\nreasoning chains for the same solution/answer. Most samples exhibit low deviation, indicating that\nthe model\u2019s confidence estimates are self-consistent. (b) Swarm plot of confidence sums across\n3 datasets. RLCR consistently remains closer to the ideal sum of 1. Nonetheless, overconfidence\nremains, suggesting room for further improvement.\n<br><br>1. Baseline classifier: Trained on RLVR outputs (these contain no uncertainty analysis).\n2. Analysis classifier: Trained on outputs of RLCR with confidence scores (present within\n<confidence> tags) removed to prevent direct hacking.\n<br><br>As both RL models have comparable task accuracy, differences in classifier performance would\nindicate that the RLCR-trained model\u2019s reasoning chains contain information specifically useful\nfor calibration. We train classifiers for 3 different model sizes of the Qwen-base model: 0.5B,\n1.5B and 7B. <a href='#' class='figure-link' data-figure-url='/static/uploads/4791dfe8-240b-4a5c-87ed-2ed361575551/figures/97e2fe7c-c500-460f-bf4d-2dd82d673dcb.png'>Figure 5</a> shows Brier and ECE scores on HotPotQA-Modified. Interestingly, while\n7B classifiers perform similarly, the analysis classifier outperforms the baseline at smaller sizes,\nsuggesting classifier capacity is key. For a sufficiently expressive classifier (as with the 7B model),\nit is possible to infer confidence-relevant features directly from the solution. In contrast, smaller\nclassifiers can make better use of RLCR reasoning chains. We believe that broader questions about\nthe relationship between classifier capacity and CoT contents are an important topic for future work.\n<br><br>4.6\nARE VERBALIZED CONFIDENCES SELF-CONSISTENT?\n<br><br>Intra-solution coherence A desirable property of uncertainty-aware reasoning is that a model should\nassign consistent confidence estimates when generating multiple uncertainty reasoning chains for the\nsame answer. Given a fixed answer y, we sample K analysis CoTs z1, . . . , zK \u223c p(\u00b7 | x, y), where\neach chain produces a verbalized confidence score qi. Ideally, these confidence scores should exhibit\nlow variability, indicating stable uncertainty estimates for a given answer.\n<br><br>Figure 6b plots the standard deviation across seven datasets, using analysis CoTs generated by the\nRLCR model trained on HotpotQA. Most samples have low standard deviation, suggesting that the\nmodel\u2019s verbalized confidence estimates are generally consistent.\n<br><br>Inter-solution consistency For tasks where answers are mutually exclusive\u2014i.e., only one answer\ncan be correct per instance\u2014it is desirable that the model distributes its confidence across distinct\nanswers such that the total confidence sums to 1.\n<br><br>Let a model generate N responses {yi}N\ni=1 with associated confidence scores {qi}N\ni=1, where qi \u2208\n[0, 1]. Let A = {a1, . . . , aK} denote the set of K \u2264 N unique answers among the yi. The mean\nconfidence assigned to answer ak is:\n<br><br>\u00afqk =\n\ufffd\n<br><br>i 1yi\u2261ak \u00b7 qi\n\ufffd\n<br><br>i 1yi\u2261ak\n(17)\n<br><br>Assuming the answers in A are mutually exclusive and exhaustive (i.e., exactly one is correct), the\nmodel\u2019s confidences should ideally sum to one: \ufffdK\nk=1 \u00afqk = 1. This captures the requirement for\ninternal consistency in the model\u2019s beliefs.\n<br><br>10\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 11,
+          "text": "Fig. 6b shows a swarm plot of predicted confidence sums across three representative datasets.\nOn the in-distribution HotpotQA dataset, RLCR\u2019s confidence sums cluster tightly around 1, indicating\nwell-calibrated belief distribution. For out-of-distribution datasets, both RLCR and RLVR exhibit\noverconfidence, with sums exceeding 1, though RLCR remains significantly closer to the ideal.\nThis reflects RLCR \u2019s improved calibration, yet highlights room for improvement in inter-solution\nconsistency, particularly out-of-distribution.\n<br><br>5\nRELATED WORK\n<br><br>Building reliable reasoning models requires not only high accuracy but also calibrated uncer-\ntainty\u2014a property that standard RL objectives often erode (Achiam et al., 2023), leaving models\nover-confident (Xiong et al., 2024) and prone to hallucination (Jaech et al., 2024). To situate our\nproposed RLCR approach within this landscape, we survey four strands of prior work on confidence\nestimation in LLMs: (i) post-hoc verbalizations, (ii) sampling-based surrogates, (iii) internal signal\nprobing, and (iv) RL-based calibration.\n<br><br>Post-hoc verbalizations prompt models to state their confidence after answering (Xiong et al., 2024;\nYang et al., 2024; Tanneru et al., 2024; Lin et al., 2022). Lin et al. (2022) fine-tune GPT-3 to predict\nconfidence given a question and answer, using GPT-3\u2019s empirical accuracy on that question as the tar-\nget label. Xiong et al. (2024) find that LMs exhibit overconfidence when verbalizing their confidence,\nalthough calibration improves with increasing model capability. Tian et al. (2023) finds that RLHF\nmodels\u2019 verbalized confidence scores are better calibrated than their conditional probabilities across\nseveral benchmarks. Recent work has examined the calibration of verbalized confidence in reasoning\nmodels. Mei et al. (2025) find that even reasoning models also suffer from overconfidence and can\nbecome even more overconfident with deeper reasoning. Similarly, Kirichenko et al. (2025) introduce\nAbstentionBench and show that LMs struggle to abstain appropriately, with reasoning fine-tuning\noften degrading abstention performance. Positively, Yoon et al. (2025) and Mei et al. (2025) find that\nreasoning models can improve their calibration by introspection and slow thinking CoT behaviors.\n<br><br>Sampling-based methods use response agreement (e.g., majority vote or best-of-N) as a proxy for\nconfidence, but are costly and require clear ground truth (Kang et al., 2025). Aichberger et al. (2025)\nestimate uncertainty by generating semantically diverse, plausible responses and measuring their\nconsistency. Kuhn et al. (2023) propose semantic entropy, a sampling-based method that accounts for\nlinguistic invariances to better estimate uncertainty in natural language generation.\n<br><br>Internal probing extracts confidence from model features like token probabilities (Gupta et al., 2024),\noffering fine-grained scores but lacking generality. Kadavath et al. (2022) prompt language models\nto output \u201ctrue\u201d or \u201cfalse\u201d for a given answer and use the probability of predicting \u201ctrue\u201d P(true),\nas a proxy for the model\u2019s confidence. Mielke et al. (2022) train a LM to to generate responses\nconditioned on confidence estimates provided by an external probe. Fadeeva et al. (2024) propose\nClaim Conditioned Probability, a token-level uncertainty method that leverages internal model signals\nto fact-check claims and detect hallucinations. Azaria & Mitchell (2023) train a classifier on hidden\nlayer activations to detect the truthfulness of statements based on the LLM\u2019s internal state. Orgad\net al. (2025) show that internal representations encode rich, token-level truthfulness signals, which\ncan detect and categorize errors beyond what is reflected in the output.\n<br><br>RL-based methods train models to output calibrated verbal confidences with RL. Stengel-Eskin\net al. (2024) introduce a speaker-listener framework, where the speaker\u2019s rewards are determined by\nthe listener\u2019s inferred confidence in the speaker\u2019s responses. Leng et al. (2025) introduce explicit\nconfidence scores in reward model training, obtaining reward models that are better aligned to\nverbalized confidences. Most closely related to our work, Xu et al. (2024) and Stangel et al. (2025)\ntrain LMs with RL using proper scoring rules as reward functions. Xu et al. (2024) adopt the\nBrier score, while Stangel et al. (2025) use a clipped version of the log loss. While effective, these\napproaches optimize solely for calibration, which can inadvertently harm task accuracy\u2014particularly\nin larger models that may exploit the objective by outputting deliberately incorrect answers with\nzero confidence to achieve perfect calibration scores. Furthermore, both methods are developed and\nevaluated exclusively on non-reasoning tasks. In contrast, we propose a calibrated reward function\nthat provably incentivizes both correctness and calibration, and we demonstrate its effectiveness on\nboth reasoning and non-reasoning benchmarks.\n<br><br>11\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 12,
+          "text": "6\nCONCLUSION\n<br><br>We show that incorporating proper scoring rules into RL, via an objective we call RLCR, enables\nreasoning models to improve both accuracy and calibration. Our approach trains models to reason\nabout and verbalize uncertainty, preserving task performance while significantly improving calibration\nin- and out-of-distribution. We demonstrate that reasoning about uncertainty improves calibration,\nand that our method improves the self-consistency of confidence, and improves with test-time\nscaling. However, there remains significant room for improvement\u2014even after RLCR, out-of-domain\ncalibration error is often high in an absolute sense, and models may still assign high confidence to\nmultiple contradictory answers. Nevertheless, these results suggest a path toward reasoning systems\nthat are not only accurate, but reliably reason about and communicate uncertainty.\n<br><br>REFERENCES\n<br><br>Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ahmad, Ilge Akkaya, Florencia Leoni Aleman,\nDiogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. Gpt4. arXiv preprint\narXiv:2303.08774, 2023.\n<br><br>Lukas Aichberger, Kajetan Schweighofer, Mykyta Ielanskyi, and Sepp Hochreiter. Improving\nuncertainty estimation through semantically diverse language generation. In The Thirteenth\nInternational Conference on Learning Representations, 2025.\n<br><br>Alon Albalak, Duy Phung, Nathan Lile, Rafael Rafailov, Kanishk Gandhi, Louis Castricato, Anikait\nSingh, Chase Blagden, Violet Xiang, Dakota Mahan, et al. Big-math: A large-scale, high-quality\nmath dataset for reinforcement learning in language models. arXiv preprint arXiv:2502.17387,\n2025.\n<br><br>Amos Azaria and Tom Mitchell. The internal state of an llm knows when it\u2019s lying. Empirical Methods\nin Natural Language Processing Findings, 2023. URL https://arxiv.org/abs/2304.13734.\n<br><br>Glenn W Brier. Verification of forecasts expressed in terms of probability. Monthly weather review,\n78(1):1\u20133, 1950.\n<br><br>Yanda Chen, Joe Benton, Ansh Radhakrishnan, Jonathan Uesato, Carson Denison, John Schulman,\nArushi Somani, Peter Hase, Misha Wagner, Fabien Roger, Vlad Mikulik, Samuel R. Bowman, Jan\nLeike, Jared Kaplan, and Ethan Perez. Reasoning models don\u2019t always say what they think, 2025.\nURL https://arxiv.org/abs/2505.05410.\n<br><br>Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian, Mark Chen, Heewoo Jun, Lukasz Kaiser,\nMatthias Plappert, Jerry Tworek, Jacob Hilton, Reiichiro Nakano, Christopher Hesse, and John\nSchulman. Training verifiers to solve math word problems. CoRR, abs/2110.14168, 2021. URL\nhttps://arxiv.org/abs/2110.14168.\n<br><br>Ekaterina Fadeeva, Aleksandr Rubashevskii, Artem Shelmanov, Sergey Petrakov, Haonan Li, Hamdy\nMubarak, Evgenii Tsymbalov, Gleb Kuzmin, Alexander Panchenko, Timothy Baldwin, Preslav\nNakov, and Maxim Panov. Fact-checking the output of large language models via token-level\nuncertainty quantification. CoRR, abs/2403.04696, 2024. URL https://doi.org/10.48550/\narXiv.2403.04696.\n<br><br>Kanishk Gandhi, Ayush Chakravarthy, Anikait Singh, Nathan Lile, and Noah D Goodman. Cognitive\nbehaviors that enable self-improving reasoners, or, four habits of highly effective stars. arXiv\npreprint arXiv:2503.01307, 2025.\n<br><br>Tilmann Gneiting and Adrian E Raftery. Strictly proper scoring rules, prediction, and estimation.\nJournal of the American statistical Association, 102(477):359\u2013378, 2007.\n<br><br>Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu,\nShirong Ma, Peiyi Wang, Xiao Bi, et al. Deepseek-r1: Incentivizing reasoning capability in llms\nvia reinforcement learning. arXiv preprint arXiv:2501.12948, 2025.\n<br><br>12\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 13,
+          "text": "Neha Gupta, Harikrishna Narasimhan, Wittawat Jitkrittum, Ankit Singh Rawat, Aditya Krishna\nMenon, and Sanjiv Kumar. Language model cascades: Token-level uncertainty and beyond. In The\nTwelfth International Conference on Learning Representations, 2024. URL https://openreview.\nnet/forum?id=KgaBScZ4VI.\n<br><br>Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul Arora, Steven Basart, Eric Tang, Dawn Song,\nand Jacob Steinhardt. Measuring mathematical problem solving with the MATH dataset. In\nThirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track\n(Round 2), 2021. URL https://openreview.net/forum?id=7Bywt2mQsCe.\n<br><br>Jingcheng Hu, Yinmin Zhang, Qi Han, Daxin Jiang, Xiangyu Zhang, and Heung-Yeung Shum.\nOpen-reasoner-zero: An open source approach to scaling up reinforcement learning on the base\nmodel. arXiv preprint arXiv:2503.24290, 2025.\n<br><br>Aaron Jaech, Adam Kalai, Adam Lerer, Adam Richardson, Ahmed El-Kishky, Aiden Low, Alec\nHelyar, Aleksander Madry, Alex Beutel, Alex Carney, et al. Openai o1 system card. arXiv preprint\narXiv:2412.16720, 2024.\n<br><br>Mandar Joshi, Eunsol Choi, Daniel Weld, and Luke Zettlemoyer. TriviaQA: A large scale distantly su-\npervised challenge dataset for reading comprehension. In Regina Barzilay and Min-Yen Kan (eds.),\nProceedings of the 55th Annual Meeting of the Association for Computational Linguistics (Volume\n1: Long Papers), pp. 1601\u20131611, Vancouver, Canada, July 2017. Association for Computational\nLinguistics. doi: 10.18653/v1/P17-1147. URL https://aclanthology.org/P17-1147/.\n<br><br>Saurav Kadavath, Tom Conerly, Amanda Askell, Tom Henighan, Dawn Drain, Ethan Perez, Nicholas\nSchiefer, Zac Hatfield-Dodds, Nova DasSarma, Eli Tran-Johnson, Scott Johnston, Sheer El Showk,\nAndy Jones, Nelson Elhage, Tristan Hume, Anna Chen, Yuntao Bai, Sam Bowman, Stanislav Fort,\nDeep Ganguli, Danny Hernandez, Josh Jacobson, Jackson Kernion, Shauna Kravec, Liane Lovitt,\nKamal Ndousse, Catherine Olsson, Sam Ringer, Dario Amodei, Tom Brown, Jack Clark, Nicholas\nJoseph, Ben Mann, Sam McCandlish, Chris Olah, and Jared Kaplan. Language models (mostly)\nknow what they know. CoRR, abs/2207.05221, 2022. URL https://doi.org/10.48550/arXiv.\n2207.05221.\n<br><br>Zhewei Kang, Xuandong Zhao, and Dawn Song. Scalable best-of-n selection for large language\nmodels via self-certainty. In 2nd AI for Math Workshop @ ICML 2025, 2025. URL https:\n//openreview.net/forum?id=nddwJseiiy.\n<br><br>Polina Kirichenko, Mark Ibrahim, Kamalika Chaudhuri, and Samuel J. Bell. Abstentionbench:\nReasoning LLMs fail on unanswerable questions. In ICML 2025 Workshop on Reliable and\nResponsible Foundation Models, 2025. URL https://openreview.net/forum?id=kYbojsAOBj.\n<br><br>Lorenz Kuhn, Yarin Gal, and Sebastian Farquhar. Semantic uncertainty: Linguistic invariances for\nuncertainty estimation in natural language generation. In The Eleventh International Conference\non Learning Representations, 2023. URL https://openreview.net/forum?id=VD-AYtP0dve.\n<br><br>Jixuan Leng, Chengsong Huang, Banghua Zhu, and Jiaxin Huang. Taming overconfidence in\nLLMs: Reward calibration in RLHF. In The Thirteenth International Conference on Learning\nRepresentations, 2025. URL https://openreview.net/forum?id=l0tg0jzsdL.\n<br><br>Stephanie Lin, Jacob Hilton, and Owain Evans. Teaching models to express their uncertainty in\nwords. Transactions on Machine Learning Research, 2022. ISSN 2835-8856. URL https:\n//openreview.net/forum?id=8s8K2UZGTZ.\n<br><br>Zhiting Mei, Christina Zhang, Tenny Yin, Justin Lidard, Ola Shorinwa, and Anirudha Majumdar.\nReasoning about uncertainty: Do reasoning models know when they don\u2019t know? arXiv preprint\narXiv:2506.18183, 2025.\n<br><br>Sabrina J. Mielke, Arthur Szlam, Emily Dinan, and Y-Lan Boureau. Reducing conversational agents\u2019\noverconfidence through linguistic calibration. Transactions of the Association for Computational\nLinguistics, 10:857\u2013872, 2022. doi: 10.1162/tacl a 00494. URL https://aclanthology.org/\n2022.tacl-1.50/.\n<br><br>13\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 14,
+          "text": "M Omar, BS Glicksberg, GN Nadkarni, and E Klang. Overconfident ai? benchmarking llm self-\nassessment in clinical scenarios. medRxiv, 2024.\n<br><br>OpenAI. Openai o3 and o4-mini system card. 2025.\n<br><br>Hadas Orgad, Michael Toker, Zorik Gekhman, Roi Reichart, Idan Szpektor, Hadas Kotek, and\nYonatan Belinkov. LLMs know more than they show: On the intrinsic representation of LLM\nhallucinations. In The Thirteenth International Conference on Learning Representations, 2025.\nURL https://openreview.net/forum?id=KRnsX5Em3W.\n<br><br>David Rein, Betty Li Hou, Asa Cooper Stickland, Jackson Petty, Richard Yuanzhe Pang, Julien Dirani,\nJulian Michael, and Samuel R Bowman. Gpqa: A graduate-level google-proof q&a benchmark. In\nFirst Conference on Language Modeling, 2024.\n<br><br>Paul Stangel, David Bani-Harouni, Chantal Pellegrini, Ege \u00a8Ozsoy, Kamilia Zaripova, Matthias\nKeicher, and Nassir Navab. Rewarding doubt: A reinforcement learning approach to confidence\ncalibration of large language models. CoRR, abs/2503.02623, March 2025. URL https://doi.\norg/10.48550/arXiv.2503.02623.\n<br><br>Elias Stengel-Eskin, Peter Hase, and Mohit Bansal. LACIE: Listener-aware finetuning for calibra-\ntion in large language models. In The Thirty-eighth Annual Conference on Neural Information\nProcessing Systems, 2024. URL https://openreview.net/forum?id=RnvgYd9RAh.\n<br><br>Alon Talmor, Jonathan Herzig, Nicholas Lourie, and Jonathan Berant. CommonsenseQA: A question\nanswering challenge targeting commonsense knowledge. In Jill Burstein, Christy Doran, and\nThamar Solorio (eds.), Proceedings of the 2019 Conference of the North American Chapter of the\nAssociation for Computational Linguistics: Human Language Technologies, Volume 1 (Long and\nShort Papers), pp. 4149\u20134158, Minneapolis, Minnesota, June 2019. Association for Computational\nLinguistics. doi: 10.18653/v1/N19-1421. URL https://aclanthology.org/N19-1421/.\n<br><br>Sree Harsha Tanneru, Chirag Agarwal, and Himabindu Lakkaraju. Quantifying uncertainty in\nnatural language explanations of large language models. In International Conference on Artificial\nIntelligence and Statistics, pp. 1072\u20131080. PMLR, 2024.\n<br><br>Katherine Tian, Eric Mitchell, Allan Zhou, Archit Sharma, Rafael Rafailov, Huaxiu Yao, Chelsea\nFinn, and Christopher D Manning. Just ask for calibration: Strategies for eliciting calibrated\nconfidence scores from language models fine-tuned with human feedback. In The 2023 Conference\non Empirical Methods in Natural Language Processing, 2023. URL https://openreview.net/\nforum?id=g3faCfrwm7.\n<br><br>Benjamin Turtel, Danny Franklin, Kris Skotheim, Luke Hewitt, and Philipp Schoenegger. Outcome-\nbased reinforcement learning to predict the future. arXiv preprint arXiv:2505.17989, 2025.\n<br><br>Kartik Waghmare and Johanna Ziegel. Proper scoring rules for estimation and forecast evaluation.\narXiv preprint arXiv:2504.01781, 2025.\n<br><br>Jason Wei, Nguyen Karina, Hyung Won Chung, Yunxin Joy Jiao, Spencer Papay, Amelia Glaese,\nJohn Schulman, and William Fedus. Measuring short-form factuality in large language models.\narXiv preprint arXiv:2411.04368, 2024.\n<br><br>Changyi Xiao, Mengdi Zhang, and Yixin Cao. Bnpo: Beta normalization policy optimization. arXiv\npreprint arXiv:2506.02864, 2025.\n<br><br>Miao Xiong, Zhiyuan Hu, Xinyang Lu, YIFEI LI, Jie Fu, Junxian He, and Bryan Hooi. Can LLMs\nexpress their uncertainty? an empirical evaluation of confidence elicitation in LLMs. In The\nTwelfth International Conference on Learning Representations, 2024. URL https://openreview.\nnet/forum?id=gjeQKFxFpZ.\n<br><br>Tianyang Xu, Shujin Wu, Shizhe Diao, Xiaoze Liu, Xingyao Wang, Yangyi Chen, and Jing Gao.\nSayself: Teaching llms to express confidence with self-reflective rationales. In Proceedings of the\n2024 Conference on Empirical Methods in Natural Language Processing, pp. 5985\u20135998, 2024.\n<br><br>Daniel Yang, Yao-Hung Hubert Tsai, and Makoto Yamada. On verbalized confidence scores for llms,\n2024. URL https://arxiv.org/abs/2412.14737.\n<br><br>14\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 15,
+          "text": "Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Bengio, William Cohen, Ruslan Salakhutdinov, and\nChristopher D. Manning. HotpotQA: A dataset for diverse, explainable multi-hop question answer-\ning. In Ellen Riloff, David Chiang, Julia Hockenmaier, and Jun\u2019ichi Tsujii (eds.), Proceedings\nof the 2018 Conference on Empirical Methods in Natural Language Processing, pp. 2369\u20132380,\nBrussels, Belgium, October-November 2018. Association for Computational Linguistics. doi:\n10.18653/v1/D18-1259. URL https://aclanthology.org/D18-1259/.\n<br><br>Zijun Yao, Yantao Liu, Yanxu Chen, Jianhui Chen, Junfeng Fang, Lei Hou, Juanzi Li, and Tat-Seng\nChua. Are reasoning models more prone to hallucination? arXiv preprint arXiv:2505.23646, 2025.\n<br><br>Dongkeun Yoon, Seungone Kim, Sohee Yang, Sunkyoung Kim, Soyeon Kim, Yongil Kim, Eunbi\nChoi, Yireun Kim, and Minjoon Seo. Reasoning models better express their confidence. arXiv\npreprint arXiv:2505.14489, 2025.\n<br><br>15\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 16,
+          "text": "A\nPROOF OF THEOREM 1\n<br><br>We consider a slightly more general family of reward functions than in the main paper body. As\nabove, we assume that predictors produce a response y, a confidence q \u2208 [0, 1]; we now assume that\nscores depend additionally on an arbitrary binary correctness signal c, distributed according to some\npy := p(c = 1 | y).\n<br><br>We consider all reward functions of the form:\n<br><br>R(c, q) = \u03bbc \u2212 S(q, c)\n<br><br>where S(q, c) is a scoring rule and \u03bb > 0 is a scalar reward for producing the correct answer.\n<br><br>We define the expected reward of choosing a confidence q for a given response y as:\n<br><br>V (y, q) = Ec R(c, q) = \u03bbpy \u2212 [pyS(q, 1) + (1 \u2212 py)S(q, 0)] .\n<br><br>Lemma 1 (Calibration incentive). For any response y, the expected reward V (y, q) is maximized at\nq = py if and only if S(q, c) is a proper scoring rule.\n<br><br>Proof. The correctness term \u03bbpy in the reward function does not depend on q, so\n<br><br>arg max\nq\nV (y, q) = arg max\nq\n\u2212 pyS(q, 1) + (1 \u2212 py)S(q, 0) = arg min\nq\nEc S(q, c) .\n<br><br>But by a scoring rule is proper by definition if Ec\u223cBernoulli(py) S(q, c) is minimized by q = py, so the\nstatement of the lemma follows immediately.\n<br><br>Lemma 2 (Correctness incentive). Consider y, y\u2032 with associated success probabilities py \u2265 py\u2032.\nThen V (y, py) \u2265 V (y\u2032, py\u2032) if and only if\n<br><br>S(p, 1) \u2212 S(p, 0) \u2264 \u03bb\nfor all p \u2208 [0, 1] .\n<br><br>Proof. First, define:\nW(p) = \u03bbp \u2212 pS(p, 1) + (1 \u2212 p)S(p, 0) ,\nNote that V (y, py) = W(py), and W(p) represents the maximum reward attainable for any y with\nassociated success probability yp. Thus, to verify the statement of the lemma, it suffices to show\nthat W(p) \u2265 W(p\u2032) if and only if p \u2265 p\u2032, which in turn is equivalent to showing that W(p) is\nnondecreasing in p.\n<br><br>We first compute the derivative of W:\n<br><br>W \u2032(p) = \u03bb \u2212 S(p, 1) + S(p, 0) \u2212 pS\u2032(p, 1) \u2212 (1 \u2212 p)S\u2032(p, 0) .\n<br><br>From the Savage-Dawid representation (Gneiting & Raftery, 2007) of proper scoring rules, there\nexists some non-negative weight function \u03c9(t) \u2265 0 such that:\n<br><br>S\u2032(p, 1) = \u2212(1 \u2212 p) \u00b7 \u03c9(p) ,\nS\u2032(p, 0) = p \u00b7 \u03c9(p) .\n<br><br>Substituting this in:\n<br><br>W \u2032(p) = \u03bb \u2212 S(p, 1) + S(p, 0) + p \u00b7 (1 \u2212 p) \u00b7 \u03c9(p) \u2212 (1 \u2212 p) \u00b7 p \u00b7 \u03c9(p)\n= S(p, 1) \u2212 S(p, 0) .\n<br><br>Thus the derivative of W is non-negative (W is nondecreasing) if and only if S(p, 1) \u2212 S(p, 0) \u2264 \u03bb\nfor p \u2208 [0, 1].\n<br><br>Then the main theorem statement in Section 3 follows immediately from these two lemmas:\n<br><br>Proof of Theorem 1. First observe that RRLCR satisfies the conditions of Lemma 2 with \u03bb = 1 and\nS(q, 1y\u2261y\u2217) = (q \u2212 1y\u2261y\u2217)2, we have maxp S(p, 1) \u2212 S(p, 0) = 1. Then condition 1 (calibration)\nfollows from Lemma 1 and the fact that the Brier score is a proper scoring rule, and condition 2\n(correctness) follows from Lemma 2 and the boundedness of S(p, 1) \u2212 S(p, 0).\n<br><br>Corollary 1. Let S(q, c) be a strictly proper scoring rule.\n<br><br>16\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 17,
+          "text": "1. If S(p, 1) \u2212 S(p, 0) is bounded, then there exists a finite \u03bb > 0 such that the reward function\nR(c, q) = \u03bbc \u2212 S(q, c) satisfies the correctness condition:\n<br><br>S(p, 1) \u2212 S(p, 0) \u2264 \u03bb\nfor all p \u2208 [0, 1]\n<br><br>and thus jointly incentivizes calibration and correctness.\n<br><br>2. If S(p, 1) \u2212 S(p, 0) is unbounded, then for any finite \u03bb > 0, there may exist some y \u2265 y\u2032\nsuch that W(py) < W(py\u2032), and RRLCR prefers (y\u2032, py\u2032) to (y, py).\n<br><br>Examples. The Brier score is bounded: S(p, 1) = (1 \u2212 p)2, S(p, 0) = p2, so:\n<br><br>S(p, 1) \u2212 S(p, 0) = 1 \u2212 2p \u2264 1\nfor all p \u2208 [0, 1]\n<br><br>Thus, the condition holds for \u03bb = 1.\n<br><br>In contrast, the logarithmic score is unbounded:\n<br><br>S(p, 1) = \u2212 log p,\nS(p, 0) = \u2212 log(1\u2212p),\nS(p, 1)\u2212S(p, 0) = log\n\ufffd1 \u2212 p\n<br><br>p\n<br><br>\ufffd\n\u2192 \u221e\nas p \u2192 0\n<br><br>So no finite \u03bb can satisfy the condition.\n<br><br>17\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 18,
+          "text": "B\nEXPERIMENTAL SETUP\n<br><br>B.1\nTRAINING DATASETS\n<br><br>HotpotQA-Modified: We use a modified version of the HotPotQA distractor dataset, which contains\nfactual questions requiring multi-hop reasoning. (Yang et al., 2018). Each example in this setting\npresents ten paragraphs, only two of which contain the information necessary to answer the question;\nthe remaining eight paragraphs include closely related but irrelevant details. Consequently, solving\nthis task requires the model to identify and reason over the pertinent passages. To more strongly\ndevelop uncertainty reasoning capability, we construct a new dataset, HotPotQA-Modified, in which\nwe systematically remove either 0, 1, or both of the key paragraphs required to answer each question.\nThis modification introduces varying levels of informational completeness that the model must reason\nover. We distribute questions across three equal groups: one-third have no relevant paragraphs (0/8),\none-third have 1 relevant paragraph (1/7), and one-third have both relevant paragraphs (2/6). Each\nquestion consistently contains 8 total paragraphs. Our training dataset consists of 20,000 examples.\nWe measure correctness using exact string match.\n<br><br>Big-Math Digits: We use Big-Math (Albalak et al., 2025), a large, curated training dataset for RL\ncontaining over 250,000 math problems, including questions from benchmarks such as Math and\nGSM8K. To ensure an appropriate range of difficulty, we retain problems for which the LLaMA-8B\nsolve rate (provided in the dataset) is between 0-70%. We also found that verifier noise can be\nsignificant in Math datasets and can cause training instability. To reduce verifier noise, we further\nrestrict the dataset to problems with numerical answers, enabling near-perfect automatic verification.\nOur final training set consists of 15,000 problems. We compute correctness using math-verify.\n<br><br>B.2\nADDITIONAL TRAINING DETAILS\n<br><br>Following Turtel et al. (2025), we remove the standard deviation division in the advantage, which\nmight help with learning on examples where there are extreme miscalibrations. We use the BNPO\nloss function, which aggregates token level losses using the number of active tokens in the local\ntraining batch (Xiao et al., 2025). We generate 32 responses per prompt with a temperature of 0.7,\nand use an effective batch size of 2048. For training RLCR, we use the Long RLCR system prompt\nfor Hotpot and the Simple RLCR prompt for Math (the long version did not provide additional benefit\non Math). We use the Simple Generation prompt for RLVR. All prompts in Appendix C.\n<br><br>Format Reward: We use a format reward to encourage adherence to the structured format shown\nin Fig. 1. In RLVR, models must format their output in <think> and <answer> tags. In RLCR,\nin addition to <think> and <answer> tags, we require an <analysis> tag to enclose uncertainty\nreasoning and a <confidence> tag for verbalized confidence. A valid response must contain all these\ntags in the correct order. Both format and calibration rewards are weighted equally.\n<br><br>SFT Warmup: In Math, we train a variant with a lightweight SFT warmup phase before RL to obtain\nhigher quality uncertainty analyses. We generate solutions from the base model on 500 examples\nand prompt Deepseek-R1 with the Expert SFT Prompt to produce uncertainty analyses for them. We\nthen perform SFT with the <think> and <answer> obtained from the base model, appended with the\n<analysis> obtained from Deepseek-R1. Note that we do not ask Deepseek-R1 to output confidence\nscores.\n<br><br>B.3\nEVALUATION DATASETS\n<br><br>We run evaluation on a large number of datasets:\n<br><br>1. HotPotQA (Distractor): We use 1000 validation examples from the original HotpotQA\ndistractor dataset. We slightly modify the dataset and remove 2 non-relevant paragraphs\nfrom each question. Thus, each question has 8 paragraphs with both supporting paragraphs\npresent. We measure correctness using exact-match (Yang et al., 2018).\n<br><br>2. HotPotQA-Modified: We evaluate on 500 held-out validation examples. We measure\ncorrectness using exact-match.\n<br><br>18\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 19,
+          "text": "3. TriviaQA: We use 2000 examples from the validation set of the TriviaQA dataset (Joshi\net al., 2017). We use the no-context split to purely test factual accuracy.We evaluate using\nLLM-as-a-judge.\n<br><br>4. SimpleQA: We use the full SimpleQA dataset consisting of 4326 factual questions (Wei\net al., 2024). We evaluate using LLM-as-a-judge.\n<br><br>5. Math-500 We use the popular MATH-500 dataset, which contains a subset of problems\nfrom the original MATH dataset (Hendrycks et al., 2021). We evaluate using math-verify, a\nmathematical expression evaluation system released by huggingface.\n<br><br>6. GSM8K: We use the test set (1319 problems) of the popular Grade School Math 8K\ndataset (Cobbe et al., 2021). We evaluate using math-verify.\n<br><br>7. Big-Math-Digits: We evaluate on 1000 held-out validation examples. We evaluate using\nmath-verify.\n<br><br>8. CommonSenseQA: We use the validation set (1220 problems) of the CommonsenseQA\ndataset (Talmor et al., 2019), a multiple-choice question answering dataset that requires\ndifferent types of commonsense knowledge to predict the correct answers. We evaluate\nusing LLM-as-a-judge.\n<br><br>9. GPQA: We use the GPQA main dataset containing 448 multiple-choice questions written\nby experts in biology, physics, and chemistry (Rein et al., 2024). We evaluate using LLM-\nas-a-judge.\n<br><br>B.4\nEVALUATION DETAILS\n<br><br>All models are evaluated with temperature 0. For all datasets except Math and GSM8K, we use a\nmaximum token budget of 4096. The system prompt for evaluation and the pipeline to extract answer\nand confidence scores varies slightly based on the method we are evaluating:\n<br><br>1. RLCR (ours): RLCR models use <think>, <answer>, <analysis> and <confidence>\ntags. They are evaluated with the same system prompts they are trained on. We extract their\nanswer from <answer> tag and their confidence from <confidence> tag.\n<br><br>2. RLVR: RLVR models use the <think> and <answer>. It is evaluated with the same system\nprompt and we extract their answer from the <answer> tag. To obtain their verbalized\nconfidence, we append \u201dThinking time ended. My verbalized confidence in my answer as a\nnumber between 0 and 100 is equal to\u201d to their generated output.\n<br><br>3. Classifier/Probe: Both methods are conditioned on the question and the RLVR model\u2019s\ngeneration (solution and answer). These methods thus use RLVR model as a generator and\ntheir reported accuracies in the result tables are equal.\n<br><br>4. Base: The base model is not good at instruction following and is prompted with a simpler\nsystem prompt (Simple Confidence Prompt) that guides it to use <think>, <answer> and\n<confidence> tags. In case no valid confidence can be extracted, we append \u201dThinking\ntime ended. My verbalized confidence in my answer as a number between 0 and 100 is equal\nto\u201d to their output and call them again to extract confidence.\n<br><br>For all methods, if we are unable to extract a valid answer from the <answer> tags, we append\n\u201dThinking time ended. My final answer is\u201d to their output and call them again. The main goal of these\ncustom pipelines is to be able to fairly extract an answer and a confidence level and minimize cases\nwhere incorrect formatting adversely affects performance. Note that because they are trained with\nformat rewards, both the RL-trained models are nearly perfect in adhering to the desired format and\nrequire minimal interventions. However, the base model benefits from this full extraction pipeline.\nImportantly, once answers and confidences are extraced, all methods are evaluated identically\nand based on the dataset, exact-match, LLM-as-a-judge or math-verify is used.\n<br><br>LLM-as-a-judge: We use Llama-3.1-8B-Instruct with temperature set to 0 as our judge. The judge\nis provided with the question, the ground truth answer and the answer extracted from the evaluation\npipeline. It is prompted to respond with \u201dYES\u201d or \u201dNO\u201d based on the correctness of the answer.\nAs the datasets we evaluate have short and objective answers, we do not condition the judge on the\nthinking traces which can add biases.\n<br><br>19\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 20,
+          "text": "C\nSYSTEM PROMPTS\n<br><br>Long RLCR Prompt\n<br><br>\u201dA conversation between User and Assistant. The user asks a question, and the Assistant\nsolves it. The assistant first thinks about the reasoning process in the mind, provides the user\nwith the final answer, then analyzes its confidence about the solution and then provides the\nuser with its confidence level. The confidence level is a number between 0 and 1 (inclusive)\nenclosed within <confidence> </confidence> tags. The final answer is enclosed between\n<answer> </answer> tags. The analysis about confidence and uncertainty is enclosed within\n<analysis> </analysis> tags. The assistant should reason about its confidence in the\nsolution and its uncertainty in the solution within these tags. Here are some guidelines for the\nanalysis: 1. Your task is to point out things where the model could be wrong in its thinking,\nor things where there might be ambiguity in the solution steps, or in the reasoning process\nitself.\n2. You should not suggest ways of fixing the response, your job is only to reason about\nuncertainties.\n3. For some questions, the response might be correct. In these cases, It is also okay to have\nonly a small number of uncertainties and then explicitly say that I am unable to spot more\nuncertainties.\n4. Uncertainties might be different from errors. For example, uncertainties may arise from\nambiguities in the question, or from the application of a particular lemma/proof.\n5. If there are alternate potential approaches that may lead to different answers, you should\nmention them.\n6. List out plausible uncertainties, do not make generic statements, be as specific about\nuncertainties as possible.\n7. Enclose this uncertainty analysis within <analysis> </analysis> tags.\nThe final format that must be followed is :\n<think> reasoning process here\n</think> <answer> final answer here </analysis> <analysis> analysis about confidence\nand uncertainty here </analysis> <confidence> confidence level here (number between 0\nand 1) </confidence> )\n<br><br>Simple RLCR Prompt\n<br><br>A conversation between User and Assistant. The user asks a question, and the Assis-\ntant solves it. The Assistant first thinks about the reasoning process in the mind, pro-\nvides the user with the final answer, then analyzes its confidence about the solution and\nprovides the user with its confidence level. The confidence level is a number between\n0 and 1 (inclusive) enclosed within <confidence> </confidence> tags. The final an-\nswer is enclosed between <answer> </answer> tags. The analysis about confidence and\nuncertainty is enclosed within <analysis>\n</analysis> tags.\nThe Assistant should\nreason about its confidence in the solution and its uncertainty in the solution within\nthese tags. The final format that must be followed is: <think> reasoning process here\n</think><answer> final answer here </answer><analysis> analysis about confidence and\nuncertainty here </analysis><confidence> confidence level here (number between 0 and\n1) </confidence>\n<br><br>20\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 21,
+          "text": "Simple Confidence Prompt\n<br><br>A conversation between User and Assistant. The user asks a question, and the Assistant\nsolves it. The assistant first thinks about the reasoning process in the mind and analyzes its\nconfidence about the solution and then provides the user with the final answer as well as its\nconfidence level. The confidence level is a number between 0 and 1 (inclusive) enclosed\nwithin <confidence> </confidence> tags. The final answer is enclosed between <answer>\n</answer> tags. The final format that must be followed is : <think> reasoning process here\n<//think><answer> final answer here </answer> <confidence> confidence level here\n(number between 0 and 1) </confidence>.\n<br><br>RLVR Prompt\n<br><br>A conversation between User and Assistant. The user asks a question, and the Assistant\nsolves it. The assistant first thinks about the reasoning process in the mind and then provides\nthe user with the answer. The reasoning process and answer are enclosed within <think>\n</think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here\n</think><answer> answer here </answer>.\n<br><br>Expert SFT Prompt\n<br><br>You are given a question and a solution to it. You have to verify if the solution is correct and\nenclose your verification reasoning within <analysis> </analysis> tags. Your analysis\nshould be a minimum of 300 characters and should sequentially go through the thinking\nsolution step by step. Here are the guidelines for your analysis:\n1. Your analysis should also be in \u2019I\u2019 form as if you wrote the solution and are now verifying\nit.\n2. Your goal is not to solve the problem but instead to verify if the steps in the presented\nsolution are correct.\n3. If there are ambiguities in the solution steps or if a step introduces uncertainty, you should\nmention it in the analysis.\n4. Go through the solution sequentially in a step-by-step manner.\n5. The analysis should be 300 characters minimum.\n6. Enclose this uncertainty analysis within <analysis> </analysis> tags.\n<br><br>21\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 22,
+          "text": "D\nRESULTS\n<br><br>D.1\nMODELS TRAINED ON HOTPOTQA\n<br><br>Method\nSimpleQA\nTrivia\n<br><br>Acc.\nAUROC\nBrier\nECE\nAcc.\nAUROC\nBrier\nECE\n<br><br>Base\n13.5%\n0.502\n0.773\n0.809\n57.8%\n0.510\n0.381\n0.371\nRLVR\n12.4%\n0.501\n0.875\n0.875\n62.2%\n0.502\n0.377\n0.377\nRLVR +Classifier\n12.4%\n0.477\n0.531\n0.638\n62.2%\n0.567\n0.256\n0.151\nRLVR +Brier-Classifier\n12.4%\n0.598\n0.112\n0.058\n62.2%\n0.568\n0.370\n0.371\nRLVR +Probe\n12.4%\n0.506\n0.141\n0.124\n62.2%\n0.472\n0.430\n0.410\nAnswer Prob\n12.4%\n0.418\n0.832\n0.847\n62.2%\n0.504\n0.366\n0.361\nRLCR (ours)\n12.1%\n0.598\n0.241\n0.337\n60.8%\n0.731\n0.202\n0.058\n<br><br>Table 2: Performance on SimpleQA and Trivia datasets. Best values bolded.\n<br><br>Method\nCommonsenseQA\nGPQA\n<br><br>Acc.\nAUROC\nBrier\nECE\nAcc.\nAUROC\nBrier\nECE\n<br><br>Base\n88.9%\n0.623\n0.099\n0.004\n39.5%\n0.492\n0.504\n0.509\nRLVR\n90.8%\n0.500\n0.092\n0.092\n39.5%\n0.500\n0.605\n0.605\nRLVR +Classifier\n90.8%\n0.635\n0.119\n0.183\n39.5%\n0.523\n0.279\n0.161\nRLVR +Brier-Classifier\n90.8%\n0.645\n0.261\n0.418\n39.5%\n0.523\n0.288\n0.212\nRLVR +Probe\n90.8%\n0.499\n0.748\n0.812\n39.5%\n0.503\n0.329\n0.292\nAnswer Prob\n90.8%\n0.603\n0.083\n0.031\n39.5%\n0.526\n0.537\n0.544\nRLCR (ours)\n91.3%\n0.728\n0.167\n0.302\n41.5%\n0.550\n0.267\n0.155\n<br><br>Table 3: Performance on CommonsenseQA and GPQA. Best values bolded.\n<br><br>Method\nMATH-500\nGSM8K\n<br><br>Acc.\nAUROC\nBrier\nECE\nAcc.\nAUROC\nBrier\nECE\n<br><br>Base\n46.8%\n0.591\n0.485\n0.492\n73.5%\n0.524\n0.240\n0.215\nRLVR\n38.6%\n0.502\n0.610\n0.611\n80.1%\n0.504\n0.198\n0.198\nRLVR +Classifier\n38.6%\n0.704\n0.260\n0.224\n80.1%\n0.572\n0.162\n0.067\nRLVR +Brier-Classifier\n38.6%\n0.580\n0.319\n0.291\n80.1%\n0.659\n0.548\n0.629\nRLVR +Probe\n38.6%\n0.671\n0.241\n0.152\n80.1%\n0.532\n0.413\n0.479\nAnswer Prob\n38.6%\n0.786\n0.510\n0.547\n80.1%\n0.775\n0.163\n0.169\nRLCR (ours)\n45.4%\n0.716\n0.251\n0.188\n86.3%\n0.740\n0.142\n0.197\n<br><br>Table 4: Performance on Math-500 and GSM8K. Best values bolded.\n<br><br>22\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 23,
+          "text": "Method\nHotpotQA\nHotpotQA-Modified\n<br><br>Acc.\nAUROC\nBrier\nECE\nAcc.\nAUROC\nBrier\nECE\n<br><br>Base\n39.7%\n0.540\n0.525\n0.535\n30.4%\n0.591\n0.566\n0.588\nRLVR\n63.0%\n0.500\n0.370\n0.370\n46.0%\n0.500\n0.540\n0.540\nRLVR +Classifier\n63.0%\n0.664\n0.217\n0.070\n46.0%\n0.772\n0.209\n0.126\nRLVR +Brier-Classifier\n63.0%\n0.653\n0.223\n0.091\n46.0%\n0.791\n0.201\n0.117\nRLVR +Probe\n63.0%\n0.553\n0.243\n0.096\n46.0%\n0.571\n0.263\n0.122\nAnswer Prob\n63.0%\n0.715\n0.357\n0.360\n46.0%\n0.609\n0.525\n0.529\nRLCR (ours)\n62.1%\n0.687\n0.210\n0.030\n44.4%\n0.798\n0.188\n0.078\n<br><br>Table 5: Performance on HotpotQA and HotpotQA-Modified. Best values bolded.\n<br><br>D.2\nMODELS TRAINED ON MATH\n<br><br>Method\nSimpleQA\nTrivia\n<br><br>Acc.\nAUROC\nBrier\nECE\nAcc.\nAUROC\nBrier\nECE\n<br><br>Base\n13.5%\n0.502\n0.773\n0.809\n57.8%\n0.510\n0.381\n0.371\nRLVR\n15.2%\n0.528\n0.828\n0.840\n58.3%\n0.503\n0.430\n0.427\nRLVR +Classifier\n15.2%\n0.446\n0.567\n0.641\n58.3%\n0.574\n0.291\n0.223\nRLVR +Brier-Classifier\n15.2%\n0.494\n0.154\n0.108\n58.3%\n0.608\n0.301\n0.253\nRLVR +Probe\n15.2%\n0.440\n0.582\n0.657\n58.3%\n0.560\n0.296\n0.229\nAnswer Prob\n15.2%\n0.450\n0.799\n0.810\n58.3%\n0.480\n0.398\n0.384\nRLCR (ours)\n12.1%\n0.518\n0.426\n0.536\n61.0%\n0.673\n0.218\n0.098\nSFT+ RLCR (ours)\n11.4%\n0.595\n0.290\n0.397\n55.5%\n0.719\n0.212\n0.058\n<br><br>Table 6: Performance on SimpleQA and Trivia datasets. Best values bolded.\n<br><br>Method\nCommonsenseQA\nGPQA\n<br><br>Acc.\nAUROC\nBrier\nECE\nAcc.\nAUROC\nBrier\nECE\n<br><br>Base\n88.6%\n0.620\n0.099\n0.004\n39.5%\n0.492\n0.504\n0.509\nRLVR\n89.3%\n0.547\n0.131\n0.126\n50.0%\n0.496\n0.531\n0.531\nRLVR +Classifier\n89.3%\n0.614\n0.226\n0.343\n50.0%\n0.514\n0.327\n0.268\nRLVR +Brier-Classifier\n89.3%\n0.599\n0.302\n0.447\n50.0%\n0.533\n0.334\n0.279\nRLVR +Probe\n89.3%\n0.571\n0.187\n0.280\n50.0%\n0.496\n0.302\n0.192\nAnswer Prob\n89.3%\n0.556\n0.104\n0.094\n50.0%\n0.532\n0.441\n0.398\nRLCR (ours)\n90.1%\n0.619\n0.213\n0.340\n43.3%\n0.568\n0.260\n0.102\nSFT+RLCR (ours)\n77.6%\n0.726\n0.217\n0.251\n32.6%\n0.602\n0.226\n0.080\n<br><br>Table 7: Performance on CommonsenseQA and GPQA datasets. Best values bolded.\n<br><br>23\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 24,
+          "text": "Method\nMATH-500\nGSM8K\n<br><br>Acc.\nAUROC\nBrier\nECE\nAcc.\nAUROC\nBrier\nECE\n<br><br>Base\n46.8%\n0.591\n0.485\n0.492\n73.5%\n0.524\n0.240\n0.215\nRLVR\n59.2%\n0.451\n0.438\n0.427\n90.6%\n0.465\n0.094\n0.048\nRLVR +Classifier\n59.2%\n0.771\n0.220\n0.177\n90.6%\n0.768\n0.077\n0.057\nRLVR +Brier-Classifier\n59.2%\n0.788\n0.215\n0.184\n90.6%\n0.757\n0.076\n0.052\nRLVR +Probe\n59.2%\n0.670\n0.259\n0.198\n90.6%\n0.560\n0.109\n0.135\nAnswer Prob\n59.2%\n0.544\n0.392\n0.395\n90.6%\n0.479\n0.091\n0.088\nRLCR (ours)\n59.8%\n0.665\n0.227\n0.120\n89.6%\n0.632\n0.100\n0.119\nSFT+RLCR (ours)\n55.8%\n0.806\n0.194\n0.156\n90.4%\n0.731\n0.076\n0.058\n<br><br>Table 8: Performance on Math-500 and GSM8K. Best values bolded.\n<br><br>Method\nBig-Math Digits\nHotpotQA\n<br><br>Acc.\nAUROC\nBrier\nECE\nAcc.\nAUROC\nBrier\nECE\n<br><br>Base\n48.1%\n0.560\n0.466\n0.469\n39.7%\n0.540\n0.525\n0.535\nRLVR\n68.8%\n0.502\n0.319\n0.300\n49.7%\n0.505\n0.547\n0.547\nRLVR +Classifier\n68.8%\n0.810\n0.164\n0.052\n49.7%\n0.584\n0.283\n0.196\nRLVR +Brier-Classifier\n68.8%\n0.794\n0.167\n0.053\n49.7%\n0.597\n0.302\n0.243\nRLVR +Probe\n68.8%\n0.722\n0.191\n0.066\n49.7%\n0.580\n0.276\n0.164\nAnswer Prob\n68.8%\n0.533\n0.297\n0.298\n49.7%\n0.599\n0.469\n0.475\nRLCR (ours)\n68.7%\n0.726\n0.181\n0.050\n48.3%\n0.615\n0.272\n0.177\nSFT+RLCR (ours)\n70.5%\n0.792\n0.154\n0.029\n41.6%\n0.650\n0.241\n0.093\n<br><br>Table 9: Performance on Big-Math Digits and HotpotQA. Best values bolded.\n<br><br>24\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 25,
+          "text": "SIMPLEQA EXAMPLE\n<br><br>Question\n<br><br>Who was awarded the Oceanography Society\u2019s Jerlov Award in 2018? (Ground Truth Answer:\nAnnick Bricaud)\n<br><br>RLCR (ours)\n<br><br><think> The question asks who was awarded the Oceanography Society\u2019s Jerlov Award in 2018. The\nJerlov Award is given by the Oceanography Society, and it is named after the late Professor Gunnar\nJerlov, a pioneer in the field of ocean optics. To find the winner of the 2018 award, I would need to\nlook up the most recent information on the Oceanography Society\u2019s website or other reliable sources.\n</think>\n<br><br><answer> Dr. David W. Schiedek </answer>\n<br><br><analysis> The Oceanography Society\u2019s website or other reliable sources do not provide information\non the winner of the 2018 Jerlov Award. It is possible that the information is not readily available\nor that the award was not given in 2018. Additionally, the name \u201dDr. David W. Schiedek\u201d is not a\nwell-known figure in the field of oceanography, which raises uncertainty about the accuracy of this\nanswer. </analysis>\n<br><br><confidence> 0.25 </confidence>\n<br><br>RLVR\n<br><br><think> The question asks for the person who was awarded the Oceanography Society\u2019s Jerlov Award\nin 2018. The Jerlov Award is given by the Oceanography Society to recognize outstanding contributions\nto the field of oceanography. The recipient for 2018 was Dr. Laurence C. Smith. </think>\n<br><br><answer> Laurence C. Smith </answer>\n<br><br><confidence> 100. </confidence>\n<br><br>Qwen-7B-Base\n<br><br><think> To find out who was awarded the Oceanography Society\u2019s Jerlov Award in 2018, I will search\nfor the most recent information on the award winners from the Oceanography Society\u2019s official website\nor a reliable source that covers scientific awards. </think>\n<br><br><answer> The Oceanography Society\u2019s Jerlov Award in 2018 was awarded to Dr.\nLisa Levin.\n</answer>\n<br><br><confidence> 0.95 </confidence>\n<br><br>25\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 26,
+          "text": "HOTPOTQA-MODIFIED EXAMPLE\n<br><br>All supporting information from the given question has been removed. The only way to answer\ncorrectly is if the model remembers the information in its weights.\n<br><br>Question and Supporting Information\n<br><br>Question: Jacques Sernas, actor in Fugitive in Trieste, was of what nationality? (Ground\nTruth Answer: Lithuanian-born French)\nYour answer will be verified with exact match score. To ensure correct verification, only\nprovide the answer within the <answer> </answer> tags. Do not put any sentences or\nreasoning process within the <answer> </answer> tags.\n<br><br>Supporting Information:\nParagraph 0\nMan From 1997 is a time travel episode of the 1956\u201357 anthology television series Conflict\ndirected by Roy del Ruth, produced by Roy Huggins, written by James Gunn from a story by\nAlfred Bester, and starring Jacques Sernas, Charles Ruggles, Gloria Talbott and James Garner.\nThe music was written by David Buttolph and the cinematographer was Ted D. McCord.\nThe show was originally telecast on November 27, 1956 and a kinescope of the broadcast\ncurrently exists.\n<br><br>Paragraph 1\nAltair is a 1956 Italian romantic drama film directed by Leonardo De Mitri and starring\nFranco Interlenghi, Antonella Lualdi and Jacques Sernas.\n<br><br>Paragraph 2\nDieci canzoni d\u2019amore da salvare (English title: \u201dTen Love Songs\u201d) is a 1953 Italian film\ndirected by Flavio Calzavara. The plot concerns a songwriter, played by Jacques Sernas, who\nleaves his sweetheart and publisher when he learns that he is going blind. Supporting Sernas\nwere Brunella Bovo, Franca Tamantini, and Enrico Viarisio.\n<br><br>Paragraph 3\nLoving You Is My Sin (Italian: Amarti `e il mio peccato) is a 1953 Italian melodrama film\ndirected by Sergio Grieco and starring Jacques Sernas, Luisa Rossi and Elisa Cegani.\n<br><br>Paragraph 4\nIt\u2019s All Adam\u2019s Fault or In Six Easy Lessons (French: C\u2019est la faute d\u2019Adam) is a 1958 French\ncomedy film directed by Jacqueline Audry and starring Dany Robin, Jacques Sernas and\nMijanou Bardot.\n<br><br>Paragraph 5\nBalearic Caper (Spanish: \u201dZarabanda bing bing\u201d, Italian: \u201dBaleari Operazione Oro\u201d,\nFrench: \u201dBarbouze ch\u00b4erie\u201d, also known as Operation Gold) is a 1966 Spanish-Italian-French\nheist-Eurospy comedy film written and directed by Jos\u00b4e Mar\u00b4\u0131a Forqu\u00b4e and starring Jacques\nSernas, Daniela Bianchi and Mireille Darc. It was shot in Ibiza.\n<br><br>Paragraph 6\nFinishing School (Italian: Fanciulle di lusso) is a 1953 French-Italian comedy film directed\nby Bernard Vorhaus and starring Susan Stephen, Anna Maria Ferrero and Jacques Sernas. It\nwas made at Cinecitt`a with sets designed by the art director Franco Lolli. It is also known by\nthe alternative title of Luxury Girls.\n<br><br>Paragraph 7\nJump into Hell is a 1955 war film directed by David Butler. The film stars Jacques Sernas\n(billed as \u201dJack Sernas\u201d) and Kurt Kasznar. The first contemporary Hollywood war film of\nthe war in Indochina, the story is a fictionalized account of the Battle of Dien Bien Phu.\n<br><br>26\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 27,
+          "text": "RLCR\n<br><br><think> The question asks for the nationality of Jacques Sernas, the actor in Fugitive in Trieste. The\ninformation provided mentions Jacques Sernas in several films, but does not specify his nationality.\nHowever, it does mention that he starred in Altair, a 1956 Italian romantic drama film, and that he\nwas an actor in several French and Italian films. This suggests that Jacques Sernas might be of French\nor Italian nationality, as he starred in films produced in those countries. However, there is no direct\ninformation about his nationality in the given text. </think>\n<br><br><answer> French </answer>\n<br><br><analysis> The information provided mentions Jacques Sernas in several French and Italian films, and\nhe starred in Altair, a 1956 Italian romantic drama film. However, there is no direct information about\nhis nationality. While it is possible that he could be of French or Italian nationality, the lack of specific\ninformation makes it uncertain. Additionally, the fact that he starred in both French and Italian films\ncould suggest that he might be of mixed nationality or have connections to both countries. Due to the\nambiguity and lack of direct information, the confidence in this answer is relatively low. </analysis>\n<br><br><confidence> 0.4 </confidence>\n<br><br>RLVR\n<br><br><think> The question asks for the nationality of Jacques Sernas, the actor in Fugitive in Trieste. Jacques\nSernas was an American actor. </think>\n<br><br><answer> American </answer>\n<br><br><confidence> 100. </confidence>\n<br><br>Qwen-7B-Base\n<br><br><think> To determine Jacques Sernas\u2019 nationality, I will analyze the information provided in the\nsupporting information.\nFrom the information given, I can see that Jacques Sernas has appeared in various films from different\ncountries, such as Italy, France, and Spain. However, there is no specific mention of his nationality in\nthe provided information.\nSince there is no direct information about Jacques Sernas\u2019 nationality, I will analyze the context of\nthe question. The question is about Jacques Sernas\u2019 nationality in the context of the film \u201dFugitive in\nTrieste.\u201d Trieste is a city in Italy, and the film is an Italian romantic drama.\nBased on this context, it is reasonable to assume that Jacques Sernas is of Italian nationality. However,\nwithout any direct information, I cannot be 100% confident in this assumption. </think>\n<br><br><answer> Italian </answer>\n<br><br><confidence> 0.8 </confidence>\n<br><br>27\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 28,
+          "text": "MATH EXAMPLE\n<br><br>An example where the analysis from the vanilla RLCR is generic, while the SFT+RLCR model\nproduces a much more specific evaluation that directly references the reasoning process. Although\nthe RLCR model achieves reasonable calibration on Math, the SFT+RLCR model outperforms it,\nlikely because it has learned to generate more effective uncertainty-aware chain-of-thought reasoning.\n<br><br>Question\n<br><br>Dalton, Hunter, Alex, Bella, and Chris formed a Superhero Fan Club. They set a goal to\nwatch as many Superhero movies as they could in one summer. Dalton watched 15 movies,\nHunter watched 19, Alex watched 25, Bella watched 21, and Chris watched 11. They all\nwatched 5 superhero movies together, while Dalton, Hunter, and Alex watched an additional\n3 movies only among themselves, and Bella and Chris watched 2 more movies only with\neach other. Every other movie they watched was different. How many different movies did\nthey see? (Ground Truth Ans: 63)\n<br><br>RLCR (ours)\n<br><br><think> To determine the total number of different movies watched by Dalton, Hunter, Alex, Bella,\nand Chris, we need to account for the movies they watched together and the additional movies they\nwatched among themselves or with each other.\nFirst, let\u2019s calculate the total number of movies watched if we didn\u2019t account for any overlaps: - Dalton\nwatched 15 movies. - Hunter watched 19 movies. - Alex watched 25 movies. - Bella watched 21 movies.\n- Chris watched 11 movies.\nThe sum of these is:\n15 + 19 + 25 + 21 + 11 = 91\n<br><br>Next, we need to subtract the overlaps. They all watched 5 movies together, so we subtract 4 overlaps\n(since the 5 movies are counted 5 times in the initial sum):\n<br><br>91 \u2212 4 \u00d7 5 = 91 \u2212 20 = 71\n<br><br>Now, we need to account for the additional movies watched among specific groups: - Dalton, Hunter,\nand Alex watched 3 additional movies only among themselves. These movies are already subtracted\nin the previous step, so we don\u2019t need to subtract them again. - Bella and Chris watched 2 additional\nmovies only with each other. These movies are also already subtracted in the previous step, so we don\u2019t\nneed to subtract them again.\nSince all the overlaps have been accounted, the total number of different movies they saw is 71.\n<br><br><answer> 71 </answer>\n<br><br><analysis> The solution provided involves a reasonable approach to accounting for the overlaps in the\nnumber of movies watched. However, there is uncertainty in the interpretation of the problem statement,\nparticularly the part about \u201dEvery other movie they watched was different.\u201d\nThis phrase could be interpreted in two ways: 1. That the 5 movies watched together, the 3 additional\nmovies watched by Dalton, Hunter, and Alex, and the 2 additional movies watched by Bella and Chris\nare all distinct from each other and from the other movies watched by the individuals. 2. That the total\nnumber of movies watched by each individual, minus the overlaps, results in a set of distinct movies.\nGiven the information provided, the first interpretation seems more plausible, but it introduces an\nelement of uncertainty. The problem does not clearly state that all movies watched are distinct, only\nthat \u201dEvery other movie they watched was different,\u201d which could be interpreted as a subset of the total\nmovies watched.\nTherefore, the confidence level in the solution is set at 0.6, acknowledging the potential for misinterpre-\ntation and the lack of clear information in the problem statement.</analysis>\n<br><br><confidence> 0.6 </confidence>\n<br><br>28\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 29,
+          "text": "SFT+RLCR (ours)\n<br><br><think> To determine the total number of different movies the Superhero Fan Club members watched,\nwe need to account for the movies watched individually and in groups, ensuring we don\u2019t double-count\nany movies.\nFirst, let\u2019s sum the total number of movies watched by each member without considering overlaps: -\nDalton watched 15 movies. - Hunter watched 19 movies. - Alex watched 25 movies. - Bella watched 21\nmovies. - Chris watched 11 movies.\nAdding these gives:\n15 + 19 + 25 + 21 + 11 = 91\n<br><br>Next, we need to subtract the overlaps. They all watched 5 movies together, so we subtract 4 times 5\n(since the 5 movies are counted 5 times in the initial sum, once for each person):\n<br><br>91 \u2212 4 \u00d7 5 = 91 \u2212 20 = 71\n<br><br>Now, we need to account for the additional movies watched in smaller groups. Dalton, Hunter, and\nAlex watched 3 more movies only among themselves. These 3 movies are already included in the\ninitial counts for Dalton, Hunter, and Alex, but we need to ensure they are not double-counted in the\nall-together group. Since the 3 movies are only among these three, they are not part of the 5 movies\nwatched together, so we don\u2019t need to subtract them again. They are already included in the individual\ncounts and the group of 5, so we add them back to the total after the initial subtraction:\n<br><br>71 + 3 = 74\n<br><br>Bella and Chris watched 2 more movies only with each other. These 2 movies are already included\nin the initial counts for Bella and Chris, but we need to ensure they are not double-counted. Since\nthe 2 movies are only between Bella and Chris, they are not part of the 5 movies watched together or\nthe 3 movies watched by Dalton, Hunter, and Alex, so we add them back to the total after the initial\nsubtraction:\n74 + 2 = 76\n<br><br>At this point, we have accounted for all the overlaps, and the total number of different movies they\nsaw is 76. To verify, let\u2019s consider the structure of the problem: - The 5 movies watched together are\ncounted 5 times initially but subtracted 4 times, so they are correct. - The 3 movies watched by Dalton,\nHunter, and Alex are included in their individual counts and the group of 5, so they are correct. - The 2\nmovies watched by Bella and Chris are included in their individual counts, so they are correct.\nThe final count of 76 different movies is consistent with the problem constraints. Therefore, the total\nnumber of different movies they saw is 76. </think>\n<br><br><answer> 76 </answer>\n<br><br><analysis> Upon reviewing the solution, I notice that the reasoning process involves summing the\ntotal movies watched individually, subtracting the overlaps, and then adding back the group-specific\nmovies. The initial sum of 91 is correct, and the subtraction of 20 for the 5 movies watched together is\nappropriate, resulting in 71. However, the addition of the 3 movies watched by Dalton, Hunter, and\nAlex (3) and the 2 movies watched by Bella and Chris (2) is problematic. These movies are already\nincluded in the individual counts and the group of 5, so adding them back is redundant and unnecessary.\nThe reasoning does not clearly explain why these movies are added back, and the final total of 76 does\nnot seem to be derived from a clear, step-by-step logical flow. The explanation about the 3 movies\nbeing \u201donly among these three\u201d and not part of the 5 is confusing, as the 3 movies are part of the\nindividual counts and the group of 5, so they should not be added back. The 2 movies watched by\nBella and Chris are also problematic, as they are only between Bella and Chris, but the reasoning does\nnot clearly address how they are added back without double-counting. The final answer of 76 is not\nsupported by the reasoning, and the steps are convoluted, making the solution unclear and potentially\nincorrect.</analysis>\n<br><br><confidence> 0.3 </confidence>\n<br><br>29\n<br><br>"
+        },
+        {
+          "figures": [],
+          "page_number": 30,
+          "text": "RLVR\n<br><br><think> To determine the total number of different movies watched by Dalton, Hunter, Alex, Bella,\nand Chris, we need to carefully account for the movies they watched together and the movies they\nwatched exclusively among themselves and with each other.\n1. **Total movies watched by each individual:** - Dalton: 15 movies - Hunter: 19 movies - Alex: 25\nmovies - Bella: 21 movies - Chris: 11 movies\n2. **Movies watched together:** They all watched 5 movies together.\n3. **Movies watched exclusively among themselves:** - Dalton, Hunter, and Alex watched an\nadditional 3 movies only among themselves. - Bella and Chris watched 2 more movies only with each\nother.\n4. **Calculating the total number of movies watched:** - First, sum the total movies watched by each\nindividual:\n15 + 19 + 25 + 21 + 11 = 91\n<br><br>- Subtract the movies watched together (since they are counted multiple times in the individual totals):\n<br><br>91 \u2212 5 = 86\n<br><br>- Add back the movies watched together (they should only be counted once):\n<br><br>86 + 5 = 91\n<br><br>- Subtract the movies watched exclusively among themselves and with each other (since they are also\ncounted multiple times): - Dalton, Hunter, and Alex watching 3 movies only among themselves are\nalready subtracted when we subtracted the 5 movies watched together. - Bella and Chris watching 2\nmovies only with each other are already subtracted when we subtracted the 5 movies watched together.\n- Therefore, we do not need to make any further adjustments for these exclusive movies as they are\nalready accounted for in the initial sum and subtraction.\n5. **Final calculation:** The total number of different movies they saw is the sum of all individual\nmovies watched, minus the movies watched together (to avoid double-counting), plus the movies\nwatched together again (to include them once), and no further adjustments are needed for the exclusive\nmovies:\n91 \u2212 5 + 5 = 91\n<br><br>Thus, the total number of different movies they saw is:\n<br><br>91\n<br><br></think>\n<br><br><answer> 91 </answer>\n<br><br><confidence> 90 </confidence>\n<br><br>30\n<br><br>"
+        }
+      ]
+    },
+    "annotations": [],
+    "citations": [
+      {
+        "DOI": "<url: 10.18653/v1/P17-1147>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 10.18653/v1/P17-1147>"
+        ]
+      },
+      {
+        "DOI": "<url: https://doi>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://doi>"
+        ]
+      },
+      {
+        "DOI": "<url: 10.18653/v1/N19-1421>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 10.18653/v1/N19-1421>"
+        ]
+      },
+      {
+        "DOI": "<url: 2503.01307>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 2503.01307>"
+        ]
+      },
+      {
+        "DOI": "<url: https://openreview.net/forum?id=g3faCfrwm7>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://openreview.net/forum?id=g3faCfrwm7>"
+        ]
+      },
+      {
+        "DOI": "<url: openreview.net/forum?id=8s8K2UZGTZ>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: openreview.net/forum?id=8s8K2UZGTZ>"
+        ]
+      },
+      {
+        "DOI": "<url: https://openreview.net/forum?id=KgaBScZ4VI>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://openreview.net/forum?id=KgaBScZ4VI>"
+        ]
+      },
+      {
+        "DOI": "<url: https://openreview>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://openreview>"
+        ]
+      },
+      {
+        "DOI": "<url: https://aclanthology.org/2022.tacl-1.50/>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://aclanthology.org/2022.tacl-1.50/>"
+        ]
+      },
+      {
+        "DOI": "<url: https://openreview.net/>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://openreview.net/>"
+        ]
+      },
+      {
+        "DOI": "<arxiv: 2110.14168>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<arxiv: 2110.14168>"
+        ]
+      },
+      {
+        "DOI": "<url: 2503.24290>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 2503.24290>"
+        ]
+      },
+      {
+        "DOI": "<url: 2504.01781>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 2504.01781>"
+        ]
+      },
+      {
+        "DOI": "<url: 2411.04368>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 2411.04368>"
+        ]
+      },
+      {
+        "DOI": "<arxiv: 2507.16806v1>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<arxiv: 2507.16806v1>"
+        ]
+      },
+      {
+        "DOI": "<url: 2501.12948>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 2501.12948>"
+        ]
+      },
+      {
+        "DOI": "<url: https://doi.org/10.48550/arXiv.2503.02623>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://doi.org/10.48550/arXiv.2503.02623>"
+        ]
+      },
+      {
+        "DOI": "<url: https://doi.org/10.48550/arXiv>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://doi.org/10.48550/arXiv>"
+        ]
+      },
+      {
+        "DOI": "<url: 2303.08774>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 2303.08774>"
+        ]
+      },
+      {
+        "DOI": "<url: https://openreview.net/forum?id=KRnsX5Em3W>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://openreview.net/forum?id=KRnsX5Em3W>"
+        ]
+      },
+      {
+        "DOI": "<url: 2506.02864>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 2506.02864>"
+        ]
+      },
+      {
+        "DOI": "<url: 2505.14489>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 2505.14489>"
+        ]
+      },
+      {
+        "DOI": "<url: https://openreview.net/forum?id=VD-AYtP0dve>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://openreview.net/forum?id=VD-AYtP0dve>"
+        ]
+      },
+      {
+        "DOI": "<url: https://aclanthology.org/N19-1421/>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://aclanthology.org/N19-1421/>"
+        ]
+      },
+      {
+        "DOI": "<url: https://openreview.net/forum?id=nddwJseiiy>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://openreview.net/forum?id=nddwJseiiy>"
+        ]
+      },
+      {
+        "DOI": "<url: https://openreview.net/forum?id=kYbojsAOBj>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://openreview.net/forum?id=kYbojsAOBj>"
+        ]
+      },
+      {
+        "DOI": "<url: github.com/huggingface/Math-Verify>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: github.com/huggingface/Math-Verify>"
+        ]
+      },
+      {
+        "DOI": "<url: https://doi.org/10.48550/arXiv.2403.04696>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://doi.org/10.48550/arXiv.2403.04696>"
+        ]
+      },
+      {
+        "DOI": "<url: https://openreview.net/forum?id=8s8K2UZGTZ>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://openreview.net/forum?id=8s8K2UZGTZ>"
+        ]
+      },
+      {
+        "DOI": "<url: https://aclanthology.org/>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://aclanthology.org/>"
+        ]
+      },
+      {
+        "DOI": "<url: https://openreview.net/forum?id=l0tg0jzsdL>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://openreview.net/forum?id=l0tg0jzsdL>"
+        ]
+      },
+      {
+        "DOI": "<url: https://aclanthology.org/D18-1259/>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://aclanthology.org/D18-1259/>"
+        ]
+      },
+      {
+        "DOI": "<url: 2505.23646>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 2505.23646>"
+        ]
+      },
+      {
+        "DOI": "<url: https://github.com/huggingface/Math-Verify>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://github.com/huggingface/Math-Verify>"
+        ]
+      },
+      {
+        "DOI": "<arxiv: 2505.05410>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<arxiv: 2505.05410>"
+        ]
+      },
+      {
+        "DOI": "<arxiv: 2412.14737>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<arxiv: 2412.14737>"
+        ]
+      },
+      {
+        "DOI": "<url: https://openreview.net/forum?id=RnvgYd9RAh>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://openreview.net/forum?id=RnvgYd9RAh>"
+        ]
+      },
+      {
+        "DOI": "<url: https://doi.org/10.48550/>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://doi.org/10.48550/>"
+        ]
+      },
+      {
+        "DOI": "<url: 10.18653/v1/D18-1259>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 10.18653/v1/D18-1259>"
+        ]
+      },
+      {
+        "DOI": "<url: https://openreview.net/forum?id=7Bywt2mQsCe>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://openreview.net/forum?id=7Bywt2mQsCe>"
+        ]
+      },
+      {
+        "DOI": "<url: https://aclanthology.org/P17-1147/>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://aclanthology.org/P17-1147/>"
+        ]
+      },
+      {
+        "DOI": "<url: https://openreview.net/forum?id=gjeQKFxFpZ>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://openreview.net/forum?id=gjeQKFxFpZ>"
+        ]
+      },
+      {
+        "DOI": "<url: 10.1162/tacl>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 10.1162/tacl>"
+        ]
+      },
+      {
+        "DOI": "<arxiv: 2304.13734>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<arxiv: 2304.13734>"
+        ]
+      },
+      {
+        "DOI": "<url: 2412.16720>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 2412.16720>"
+        ]
+      },
+      {
+        "DOI": "<url: 2506.18183>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 2506.18183>"
+        ]
+      },
+      {
+        "DOI": "<url: https://doi.org/10.48550/arXiv.2207.05221>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: https://doi.org/10.48550/arXiv.2207.05221>"
+        ]
+      },
+      {
+        "DOI": "<url: 2505.17989>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 2505.17989>"
+        ]
+      },
+      {
+        "DOI": "<url: 2502.17387>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: 2502.17387>"
+        ]
+      },
+      {
+        "DOI": "<url: openreview.net/forum?id=nddwJseiiy>",
+        "URL": "",
+        "abstract": "",
+        "author": [],
+        "link": [],
+        "publisher": "",
+        "title": [
+          "<url: openreview.net/forum?id=nddwJseiiy>"
+        ]
+      }
+    ]
+  }
+]

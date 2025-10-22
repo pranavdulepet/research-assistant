@@ -7,7 +7,7 @@ import math
 import subprocess
 import json
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
 import shutil
 from pathlib import Path
 from datetime import datetime
@@ -82,9 +82,9 @@ AI_PROVIDERS = {
 
 # Initialize AI clients
 if AI_PROVIDERS['gemini']['enabled']:
-    genai.configure(api_key=AI_PROVIDERS['gemini']['api_key'])
-    gemini_model = genai.GenerativeModel('gemini-pro')
-    print("Gemini model initialized successfully")
+    # Using new google-genai SDK
+    gemini_client = genai.Client(api_key=AI_PROVIDERS['gemini']['api_key'])
+    print("Gemini client initialized successfully with new google-genai SDK")
 
 if AI_PROVIDERS['openai']['enabled']:
     openai_client = OpenAI(
@@ -851,9 +851,11 @@ async def get_ai_response(provider, prompt, temperature=0.7):
         if provider == 'gemini' and AI_PROVIDERS['gemini']['enabled']:
             try:
                 logging.info("Generating Gemini response...")
-                response = gemini_model.generate_content(
-                    prompt,
-                    generation_config={"temperature": temperature}
+                # Using new google-genai SDK
+                response = gemini_client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=prompt,
+                    config={'temperature': temperature}
                 )
                 if not response.text:
                     return "Response blocked due to content safety filters."
