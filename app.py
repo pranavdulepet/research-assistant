@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, request, render_template, jsonify, Response, stream_with_context
 import os
 import fitz 
 import re
@@ -27,6 +27,8 @@ from typing import List, Dict
 import asyncio
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import hashlib
+from werkzeug.utils import secure_filename
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -36,22 +38,60 @@ logging.basicConfig(
 
 app = Flask(__name__)
 
-# Directories for uploads and extracted figures.
-app.config['UPLOAD_FOLDER'] = 'static/figures'
-app.config['UPLOAD_PDF'] = 'static/uploads'
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-os.makedirs(app.config['UPLOAD_PDF'], exist_ok=True)
+# Canonical storage root for all uploads/artifacts.
+app.config['STORAGE_BASE'] = 'static/uploads'
+os.makedirs(app.config['STORAGE_BASE'], exist_ok=True)
 
 # File where conversation data will be stored.
 CONVERSATIONS_FILE = "conversations.json"
 
 SPECIAL_THRESHOLD = 300  # threshold (in PDF points) for converting a figure to SVG
 
-# Update the configuration to use base directories
-app.config['STORAGE_BASE'] = 'static/uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
+# Warn if legacy duplicate upload dir exists (should not be used)
+try:
+    legacy_uploads = Path(__file__).resolve().parent / "app" / "static" / "uploads"
+    if legacy_uploads.exists():
+        logging.warning("Legacy uploads directory exists at %s (canonical is %s)", legacy_uploads, app.config['STORAGE_BASE'])
+except Exception:
+    pass
+
 load_dotenv()
+def run_async(coro):
+    """
+    Run an async coroutine from sync Flask handlers safely.
+    Avoids asyncio.run() pitfalls if an event loop is already present.
+    """
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+@app.after_request
+def add_security_headers(resp):
+    # Basic hardening headers (tweak if you embed in iframes etc.)
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "DENY")
+    resp.headers.setdefault("Referrer-Policy", "no-referrer")
+    resp.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+    resp.headers.setdefault("Cross-Origin-Resource-Policy", "same-origin")
+    return resp
+
+@app.errorhandler(413)
+def too_large(_e):
+    return jsonify({"error": "File too large"}), 413
+
+@app.errorhandler(404)
+def not_found(_e):
+    return jsonify({"error": "Not found"}), 404
+
+@app.errorhandler(500)
+def server_error(e):
+    logging.exception("Unhandled server error: %s", str(e))
+    return jsonify({"error": "Internal server error"}), 500
+
 
 # After load_dotenv(), add these debug prints:
 logging.info("Environment Variables Check:")
@@ -71,12 +111,6 @@ AI_PROVIDERS = {
         'name': 'OpenAI GPT-4',
         'enabled': False, #bool(os.getenv("OPENAI_API_KEY")),
         'api_key': None #os.getenv("OPENAI_API_KEY")
-    },
-    'deepseek': {
-        'id': 'deepseek',
-        'name': 'DeepSeek (Coming Soon)',
-        'enabled': False,
-        'api_key': None
     }
 }
 
@@ -101,6 +135,85 @@ def load_conversations():
 def save_conversations(conversations):
     with open(CONVERSATIONS_FILE, "w") as f:
         json.dump(conversations, f, indent=2)
+
+def _safe_filename(name: str) -> str:
+    name = (name or "").strip() or "export"
+    name = re.sub(r"[^A-Za-z0-9._-]+", "_", name)
+    return name[:120]
+
+@app.route("/export/<upload_id>", methods=["GET"])
+def export_upload(upload_id):
+    fmt = (request.args.get("format") or "md").lower()
+    convs = load_conversations()
+    conv = next((c for c in convs if c.get("id") == upload_id), None)
+    if not conv:
+        return jsonify({"error": "Upload not found"}), 404
+
+    title = conv.get("title") or upload_id
+    annotations = conv.get("annotations") or []
+
+    if fmt == "json":
+        payload = {
+            "id": conv.get("id"),
+            "title": title,
+            "pdf_url": conv.get("pdf_url"),
+            "exported_at": datetime.utcnow().isoformat() + "Z",
+            "annotations": annotations,
+        }
+        body = json.dumps(payload, indent=2)
+        filename = _safe_filename(title) + ".annotations.json"
+        return Response(
+            body,
+            mimetype="application/json",
+            headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'},
+        )
+
+    # Markdown default
+    by_page = {}
+    for a in annotations:
+        page = a.get("page")
+        by_page.setdefault(page, []).append(a)
+
+    lines = []
+    lines.append(f"# {title}")
+    lines.append("")
+    lines.append(f"- Exported: {datetime.utcnow().isoformat()}Z")
+    if conv.get("pdf_url"):
+        lines.append(f"- PDF: {conv.get('pdf_url')}")
+    lines.append("")
+
+    for page in sorted([p for p in by_page.keys() if p is not None]):
+        lines.append(f"## Page {page}")
+        lines.append("")
+        for a in by_page[page]:
+            a_type = a.get("type", "note")
+            sel = a.get("selectedText", "").strip()
+            comment = a.get("comment", "").strip()
+            lines.append(f"### {a_type.title()}")
+            if sel:
+                lines.append(f"> {sel}")
+                lines.append("")
+            if comment:
+                lines.append(comment)
+                lines.append("")
+            if a_type == "note" and a.get("aiVerification"):
+                lines.append("**AI Verification:**")
+                lines.append("")
+                lines.append(a.get("aiVerification"))
+                lines.append("")
+            if a_type == "question" and a.get("aiAnswer"):
+                lines.append("**AI Answer:**")
+                lines.append("")
+                lines.append(a.get("aiAnswer"))
+                lines.append("")
+
+    body = "\n".join(lines).strip() + "\n"
+    filename = _safe_filename(title) + ".annotations.md"
+    return Response(
+        body,
+        mimetype="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'},
+    )
 
 @app.route('/')
 def index():
@@ -133,6 +246,13 @@ def upload_pdf():
     if pdf_file.filename == '':
         logging.error("No selected file")
         return "No selected file", 400
+
+    # Basic validation
+    filename = secure_filename(pdf_file.filename or "")
+    if not filename.lower().endswith(".pdf"):
+        return jsonify({"error": "Only PDF uploads are supported"}), 400
+    if pdf_file.mimetype and pdf_file.mimetype not in ("application/pdf", "application/octet-stream"):
+        return jsonify({"error": f"Invalid content type: {pdf_file.mimetype}"}), 400
     
     # Create unique ID and directory structure
     upload_id = str(uuid.uuid4())
@@ -204,6 +324,16 @@ def extract_text_and_figures(pdf_path, upload_id, figures_path):
         r'(?:Figure|Fig\.?|FIGURE)\s+(\d+(\.\d+)*[a-z]?)',
         re.IGNORECASE
     )
+    figure_caption_regex = re.compile(
+        r'^\s*(?:Figure|Fig\.?|FIGURE)\s+(\d+(\.\d+)*[a-z]?)\s*[:\.\-]\s*(.+)$',
+        re.IGNORECASE
+    )
+
+    def _figure_num_key(s: str):
+        if not s:
+            return None
+        m = re.search(r'(\d+(\.\d+)*[a-z]?)', s, re.IGNORECASE)
+        return m.group(1).lower() if m else None
 
     for page_index, page in enumerate(doc):
         text_blocks = page.get_text("blocks")
@@ -213,6 +343,15 @@ def extract_text_and_figures(pdf_path, upload_id, figures_path):
             block_text = block[4]
             block_text = fix_math_extraction(block_text)
             processed_blocks.append(block_text)
+
+        # Extract likely figure captions on this page
+        captions_by_key = {}
+        for t in processed_blocks:
+            m = figure_caption_regex.match((t or "").strip())
+            if m:
+                key = (m.group(1) or "").lower()
+                if key and key not in captions_by_key:
+                    captions_by_key[key] = (t or "").strip()
 
         references_on_page = []
         for block in text_blocks:
@@ -282,6 +421,12 @@ def extract_text_and_figures(pdf_path, upload_id, figures_path):
             if best_image:
                 best_image["assigned_ref"] = ref_obj["reference_text"]
 
+        # Attach captions (if found) to assigned figures
+        for img_obj in figures_data:
+            ref = img_obj.get("assigned_ref")
+            key = _figure_num_key(ref)
+            img_obj["caption"] = captions_by_key.get(key) if key else None
+
         ref_to_url_map = {img["assigned_ref"]: img["url"]
                          for img in figures_data if img["assigned_ref"]}
 
@@ -299,7 +444,7 @@ def extract_text_and_figures(pdf_path, upload_id, figures_path):
         result["pages"].append({
             "page_number": page_index + 1,
             "text": replaced_page_html,
-            "figures": [{"ref": img["assigned_ref"], "url": img["url"]} for img in figures_data]
+            "figures": [{"ref": img["assigned_ref"], "url": img["url"], "caption": img.get("caption")} for img in figures_data]
         })
 
     doc.close()
@@ -376,15 +521,17 @@ def verify_annotation():
     
     # Perform web search for relevant information
     try:
-        web_results = asyncio.run(perform_web_search(f"{comment} {annotation_text}"))
+        web_results = run_async(perform_web_search(f"{comment} {annotation_text}"))
         web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
     except Exception as e:
         print(f"Web search error: {str(e)}")
         web_context = ""
     
     # Build context with figures
-    figures_context = "\n".join([f"Figure {fig['ref']}: Located at page {fig['page_number']}" 
-                                for fig in figures if fig.get('ref')])
+    figures_context = "\n".join([
+        f"Figure {fig['ref']} (page {fig.get('page_number')}): {fig.get('caption') or 'No caption found.'}"
+        for fig in figures if fig.get('ref')
+    ])
     
     # Get referenced papers context
     referenced_papers_context = get_referenced_papers_context(upload_id)
@@ -438,7 +585,7 @@ def verify_annotation():
     print("\n=== SENDING REQUEST TO GEMINI ===")
     try:
         print("Waiting for Gemini response...")
-        response = asyncio.run(get_ai_response(provider, prompt))
+        response = run_async(get_ai_response(provider, prompt))
         print("Response received from Gemini!")
         print("\n=== AI RESPONSE ===")
         print(response)
@@ -503,6 +650,32 @@ class DocumentStore:
 document_stores = {}
 document_stores_lock = threading.Lock()
 
+# Separate stores for whole-paper chat retrieval (avoid mixing with per-request context stores)
+paper_document_stores = {}
+paper_document_stores_lock = threading.Lock()
+
+def _html_to_text(html: str) -> str:
+    """Convert extracted HTML-ish page text to plaintext for retrieval."""
+    try:
+        soup = BeautifulSoup(html or "", "html.parser")
+        return soup.get_text(separator=" ", strip=True)
+    except Exception:
+        # Fallback: strip tags crudely
+        return re.sub(r"<[^>]+>", " ", html or "")
+
+def _paper_context_to_plaintext(paper_context: Dict) -> str:
+    pages = paper_context.get("pages", []) if isinstance(paper_context, dict) else []
+    texts = []
+    for p in pages:
+        if isinstance(p, dict):
+            texts.append(_html_to_text(p.get("text", "")))
+    return "\n".join(t for t in texts if t)
+
+def _text_digest(text: str, max_chars: int = 200_000) -> str:
+    """Stable digest for cache invalidation; hashes a prefix for speed."""
+    t = (text or "")[:max_chars]
+    return hashlib.sha256(t.encode("utf-8", errors="ignore")).hexdigest()
+
 # Update the answer_question function
 @app.route("/answer-question", methods=["POST"])
 def answer_question():
@@ -538,7 +711,7 @@ def answer_question():
         
         # Build context with figures
         figures_context = "\n".join([
-            f"Figure {fig['ref']}: Located at page {fig['page_number']}" 
+            f"Figure {fig['ref']} (page {fig.get('page_number')}): {fig.get('caption') or 'No caption found.'}"
             for fig in figures if fig.get('ref')
         ])
         
@@ -594,7 +767,7 @@ def answer_question():
         """
         
         try:
-            response = asyncio.run(get_ai_response(provider, prompt))
+            response = run_async(get_ai_response(provider, prompt))
             return jsonify({"answer": response})
         except Exception as e:
             print(f"Error getting AI response: {str(e)}")
@@ -617,15 +790,31 @@ def chat_with_paper():
     paper_context = data.get("paper_context", {})
     annotations_context = data.get("annotations_context", "")
     
-    # Combine all page text for context
-    full_text = "\n".join([page.get("text", "") for page in paper_context.get("pages", [])])
+    # Build plaintext and retrieve only the most relevant chunks (avoid sending full paper each request)
+    full_text_plain = _paper_context_to_plaintext(paper_context)
+    digest = _text_digest(full_text_plain)
+    with paper_document_stores_lock:
+        cached = paper_document_stores.get(upload_id)
+        if not cached or cached.get("digest") != digest:
+            ds = DocumentStore()
+            # Larger chunks for chat; overlap via the existing sentence-window behavior
+            ds.add_document(full_text_plain, chunk_size=1200, overlap=4)
+            paper_document_stores[upload_id] = {"digest": digest, "store": ds}
+        doc_store = paper_document_stores[upload_id]["store"]
+
+    try:
+        relevant_chunks = doc_store.search(message, k=5) if full_text_plain else []
+    except Exception:
+        relevant_chunks = []
+
+    context_text = "\n\n---\n\n".join(relevant_chunks) if relevant_chunks else (full_text_plain[:6000] if full_text_plain else "")
     
     # Get referenced papers context
     referenced_papers_context = get_referenced_papers_context(upload_id)
     
     # Perform web search
     try:
-        web_results = asyncio.run(perform_web_search(message))
+        web_results = run_async(perform_web_search(message))
         web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
     except Exception as e:
         print(f"Web search error: {str(e)}")
@@ -642,8 +831,8 @@ def chat_with_paper():
     - **Avoid hallucinations:** If the information is not available in the provided content, explicitly state that you cannot answer based on the available information.
     - **Format using Markdown:** Structure your answer with Markdown to improve readability.
 
-    Paper Content:
-    {full_text}
+    Paper Excerpts (most relevant to the user question):
+    {context_text}
 
     Existing Annotations and Their Responses:
     {annotations_context}
@@ -659,7 +848,7 @@ def chat_with_paper():
     """
     
     try:
-        response = asyncio.run(get_ai_response(provider, prompt))
+        response = run_async(get_ai_response(provider, prompt))
         return jsonify({
             "response": response
         })
@@ -840,9 +1029,6 @@ async def get_ai_response(provider, prompt, temperature=0.7):
                 logging.error("OpenAI error details: %s", str(e))
                 raise Exception(f"OpenAI error: {str(e)}")
             
-        elif provider == 'deepseek':
-            return "DeepSeek integration coming soon. Please select another AI provider."
-            
         else:
             available_providers = [p for p in AI_PROVIDERS if AI_PROVIDERS[p]['enabled']]
             raise ValueError(f"AI provider '{provider}' not available. Available providers: {available_providers}")
@@ -850,6 +1036,366 @@ async def get_ai_response(provider, prompt, temperature=0.7):
     except Exception as e:
         logging.error("AI response error: %s", str(e))
         raise Exception(str(e))
+
+def _sse_event(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+def _iter_gemini_stream(prompt: str, temperature: float = 0.7):
+    if not AI_PROVIDERS.get('gemini', {}).get('enabled'):
+        raise Exception("Gemini is not enabled")
+    # Prefer streaming API when available
+    stream_fn = getattr(gemini_client.models, "generate_content_stream", None)
+    if callable(stream_fn):
+        for chunk in stream_fn(
+            model="gemini-2.5-flash",
+            contents=prompt,
+            config={"temperature": temperature},
+        ):
+            text = getattr(chunk, "text", None)
+            if text:
+                yield text
+        return
+    # Fallback: single-shot response
+    resp = gemini_client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+        config={"temperature": temperature},
+    )
+    if resp and getattr(resp, "text", None):
+        yield resp.text
+
+def _iter_ai_stream(provider: str, prompt: str, temperature: float = 0.7):
+    # For now, stream Gemini; OpenAI streaming can be added once enabled.
+    if provider == "gemini":
+        yield from _iter_gemini_stream(prompt, temperature=temperature)
+    elif provider == "openai" and AI_PROVIDERS.get("openai", {}).get("enabled"):
+        # Fallback to non-stream until OpenAI is enabled and verified.
+        text = run_async(get_ai_response(provider, prompt, temperature=temperature))
+        yield text
+    else:
+        text = run_async(get_ai_response(provider, prompt, temperature=temperature))
+        yield text
+
+@app.route("/chat-with-paper/stream", methods=["POST"])
+def chat_with_paper_stream():
+    data = request.get_json() or {}
+    upload_id = data.get("uploadId")
+    if not upload_id:
+        return jsonify({"error": "Upload ID is required"}), 400
+
+    provider = data.get("provider")
+    if not provider or provider not in AI_PROVIDERS:
+        return jsonify({"error": "Invalid AI provider"}), 400
+    if not AI_PROVIDERS[provider]["enabled"]:
+        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+
+    message = data.get("message", "")
+    paper_context = data.get("paper_context", {})
+    annotations_context = data.get("annotations_context", "")
+
+    # Same retrieval behavior as non-streaming endpoint
+    full_text_plain = _paper_context_to_plaintext(paper_context)
+    digest = _text_digest(full_text_plain)
+    with paper_document_stores_lock:
+        cached = paper_document_stores.get(upload_id)
+        if not cached or cached.get("digest") != digest:
+            ds = DocumentStore()
+            ds.add_document(full_text_plain, chunk_size=1200, overlap=4)
+            paper_document_stores[upload_id] = {"digest": digest, "store": ds}
+        doc_store = paper_document_stores[upload_id]["store"]
+
+    try:
+        relevant_chunks = doc_store.search(message, k=5) if full_text_plain else []
+    except Exception:
+        relevant_chunks = []
+    context_text = "\n\n---\n\n".join(relevant_chunks) if relevant_chunks else (full_text_plain[:6000] if full_text_plain else "")
+
+    referenced_papers_context = get_referenced_papers_context(upload_id)
+
+    # Perform web search (single pass)
+    try:
+        web_results = run_async(perform_web_search(message))
+        web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
+    except Exception:
+        web_context = ""
+
+    prompt = f"""
+    You are an expert research assistant dedicated to helping users understand academic papers. You will be provided with paper excerpts, annotations, relevant referenced papers, and pertinent web search results. Your task is to answer the user's questions based on this information and your general knowledge.
+
+    Instructions:
+    - **Use only the provided sources:** If you include any information from the paper, referenced papers, or web search results, cite the source clearly.
+    - **Consider existing annotations:** Reference and build upon previous annotations and their AI responses when relevant.
+    - **Be precise and detailed:** Ensure your responses are comprehensive and directly address the user's input.
+    - **Avoid hallucinations:** If the information is not available in the provided content, explicitly state that.
+    - **Format using Markdown:** Structure your answer with Markdown to improve readability.
+
+    Paper Excerpts (most relevant to the user question):
+    {context_text}
+
+    Existing Annotations and Their Responses:
+    {annotations_context}
+
+    Referenced Papers:
+    {referenced_papers_context}
+
+    Web Search Results:
+    {web_context}
+
+    User Question:
+    {message}
+    """
+
+    def generate():
+        yield _sse_event("start", {"ok": True})
+        full = ""
+        try:
+            for token in _iter_ai_stream(provider, prompt, temperature=0.7):
+                full += token
+                yield _sse_event("token", {"token": token})
+            yield _sse_event("done", {"ok": True, "text": full})
+        except Exception as e:
+            yield _sse_event("error", {"error": str(e)})
+
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    }
+    return Response(stream_with_context(generate()), mimetype="text/event-stream", headers=headers)
+
+@app.route("/chat-multi/stream", methods=["POST"])
+def chat_multi_stream():
+    data = request.get_json() or {}
+    provider = data.get("provider")
+    if not provider or provider not in AI_PROVIDERS:
+        return jsonify({"error": "Invalid AI provider"}), 400
+    if not AI_PROVIDERS[provider]["enabled"]:
+        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+
+    upload_ids = data.get("uploadIds") or []
+    if not isinstance(upload_ids, list) or len(upload_ids) < 2:
+        return jsonify({"error": "uploadIds must be a list with 2+ items"}), 400
+
+    message = data.get("message", "")
+    annotations_context = data.get("annotations_context", "")
+
+    # Load stored conversations to get extraction payloads/titles
+    convs = load_conversations()
+    conv_map = {c.get("id"): c for c in convs if isinstance(c, dict) and c.get("id")}
+
+    paper_blocks = []
+    for uid in upload_ids:
+        conv = conv_map.get(uid)
+        if not conv:
+            continue
+        title = conv.get("title") or uid
+        extraction = conv.get("extraction") or {}
+        full_text_plain = _paper_context_to_plaintext(extraction)
+        if not full_text_plain:
+            continue
+
+        digest = _text_digest(full_text_plain)
+        with paper_document_stores_lock:
+            cached = paper_document_stores.get(uid)
+            if not cached or cached.get("digest") != digest:
+                ds = DocumentStore()
+                ds.add_document(full_text_plain, chunk_size=1200, overlap=4)
+                paper_document_stores[uid] = {"digest": digest, "store": ds}
+            doc_store = paper_document_stores[uid]["store"]
+
+        try:
+            chunks = doc_store.search(message, k=3)
+        except Exception:
+            chunks = []
+
+        if chunks:
+            paper_blocks.append(
+                f"=== Paper: {title} ({uid}) ===\n" + "\n\n---\n\n".join(chunks)
+            )
+
+    if not paper_blocks:
+        return jsonify({"error": "No papers found/loaded for the provided uploadIds"}), 400
+
+    # Web search (single pass)
+    try:
+        web_results = run_async(perform_web_search(message))
+        web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
+    except Exception:
+        web_context = ""
+
+    prompt = f"""
+    You are an expert research assistant. Answer the user's question by synthesizing evidence across multiple papers.
+
+    Instructions:
+    - Cite which paper a statement comes from using the paper title if possible.
+    - If papers disagree, call it out explicitly.
+    - Avoid hallucinations; if not supported by provided excerpts, say so.
+    - Format using Markdown.
+
+    Paper Excerpts (retrieved by relevance):
+    {chr(10).join(paper_blocks)}
+
+    Existing Annotations and Their Responses (current workspace):
+    {annotations_context}
+
+    Web Search Results:
+    {web_context}
+
+    User Question:
+    {message}
+    """
+
+    def generate():
+        yield _sse_event("start", {"ok": True})
+        full = ""
+        try:
+            for token in _iter_ai_stream(provider, prompt, temperature=0.7):
+                full += token
+                yield _sse_event("token", {"token": token})
+            yield _sse_event("done", {"ok": True, "text": full})
+        except Exception as e:
+            yield _sse_event("error", {"error": str(e)})
+
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    return Response(stream_with_context(generate()), mimetype="text/event-stream", headers=headers)
+
+@app.route("/verify-annotation/stream", methods=["POST"])
+def verify_annotation_stream():
+    data = request.get_json() or {}
+    provider = data.get("provider")
+    upload_id = data.get("uploadId")
+
+    if not upload_id:
+        return jsonify({"error": "Upload ID is required"}), 400
+    if not provider or provider not in AI_PROVIDERS:
+        return jsonify({"error": "Invalid AI provider"}), 400
+    if not AI_PROVIDERS[provider]["enabled"]:
+        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+
+    annotation_text = data.get("selectedText", "")
+    comment = data.get("comment", "")
+    context = data.get("context", "")
+    figures = data.get("figures", [])
+
+    # Web search for relevant information
+    try:
+        web_results = run_async(perform_web_search(f"{comment} {annotation_text}"))
+        web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
+    except Exception:
+        web_context = ""
+
+    figures_context = "\n".join(
+        [
+            f"Figure {fig['ref']} (page {fig.get('page_number')}): {fig.get('caption') or 'No caption found.'}"
+            for fig in figures if fig.get("ref")
+        ]
+    )
+    referenced_papers_context = get_referenced_papers_context(upload_id)
+
+    prompt = f"""
+    You are an expert AI research assistant. Your task is to verify the accuracy of a user's comment or claim regarding a specific annotation in a paper. Use only the provided sources—selected text, context from the paper, referenced papers, available figures, and web search results—along with any relevant general knowledge.
+
+    **Inputs Provided:**
+    - **Selected Text:** "{annotation_text}"
+    - **User's Comment/Claim:** "{comment}"
+    - **Context from the Paper:**  
+    {context}
+    - **Available Figures in Context:**  
+    {figures_context}
+    - **Referenced Papers Context:**  
+    {referenced_papers_context}
+    - **Web Search Results:**  
+    {web_context}
+
+    **Instructions:**
+    1. **Verification:** Verify whether the user's comment/claim about the selected text is accurate.
+    2. **Evidence from the Paper:** Quote and cite specific parts of the paper.
+    3. **Evidence from Referenced Papers:** Quote and cite specific parts from referenced papers.
+    4. **Evidence from Web Sources:** Cite web sources as [Title](URL) when available.
+    5. **General Knowledge:** Indicate relevant general knowledge.
+    6. **Suggested Corrections:** Provide corrections if applicable.
+
+    Structure your response using Markdown for readability. Avoid hallucinations; if insufficient info, say so.
+    """
+
+    def generate():
+        yield _sse_event("start", {"ok": True})
+        full = ""
+        try:
+            for token in _iter_ai_stream(provider, prompt, temperature=0.7):
+                full += token
+                yield _sse_event("token", {"token": token})
+            yield _sse_event("done", {"ok": True, "text": full})
+        except Exception as e:
+            yield _sse_event("error", {"error": str(e)})
+
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    return Response(stream_with_context(generate()), mimetype="text/event-stream", headers=headers)
+
+@app.route("/answer-question/stream", methods=["POST"])
+def answer_question_stream():
+    data = request.get_json() or {}
+    upload_id = data.get("uploadId")
+    if not upload_id:
+        return jsonify({"error": "Upload ID is required"}), 400
+
+    provider = data.get("provider")
+    if not provider or provider not in AI_PROVIDERS:
+        return jsonify({"error": "Invalid AI provider"}), 400
+    if not AI_PROVIDERS[provider]["enabled"]:
+        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+
+    question = data.get("question", "")
+    context = data.get("context", "")
+    selected_text = data.get("selectedText", "")
+    figures = data.get("figures", [])
+
+    # Retrieval (same approach as /answer-question)
+    with document_stores_lock:
+        if upload_id not in document_stores:
+            doc_store = DocumentStore()
+            doc_store.add_document(context)
+            document_stores[upload_id] = doc_store
+        relevant_chunks = document_stores[upload_id].search(question, k=3)
+    context_text = "\n\n".join(relevant_chunks)
+
+    figures_context = "\n".join(
+        [
+            f"Figure {fig['ref']} (page {fig.get('page_number')}): {fig.get('caption') or 'No caption found.'}"
+            for fig in figures if fig.get("ref")
+        ]
+    )
+    referenced_papers_context = get_referenced_papers_context(upload_id)
+
+    prompt = f"""
+    You are an expert AI research assistant tasked with answering questions about a specific annotated part of a paper.
+
+    **Inputs Provided:**
+    - **Question:** "{question}"
+    - **Selected Text:** "{selected_text}"
+    - **Context from the Paper:**  
+    {context_text}
+    - **Available Figures in Context:**  
+    {figures_context}
+    - **Referenced Papers Context:**  
+    {referenced_papers_context}
+
+    Include sections: Answer, Evidence from the Paper, Evidence from Referenced Papers, General Knowledge, Additional Context.
+    Format using Markdown. If insufficient info, say so.
+    """
+
+    def generate():
+        yield _sse_event("start", {"ok": True})
+        full = ""
+        try:
+            for token in _iter_ai_stream(provider, prompt, temperature=0.7):
+                full += token
+                yield _sse_event("token", {"token": token})
+            yield _sse_event("done", {"ok": True, "text": full})
+        except Exception as e:
+            yield _sse_event("error", {"error": str(e)})
+
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    return Response(stream_with_context(generate()), mimetype="text/event-stream", headers=headers)
 
 def store_cited_paper(metadata, full_text, upload_id, db_path="cited_papers.db"):
     """Store cited paper metadata and full text into the local SQLite database with its associated upload_id."""
@@ -1165,6 +1711,183 @@ def get_citations(upload_id):
         logging.error("Error fetching citations for upload_id %s: %s", upload_id, str(e))
         return jsonify({"error": str(e)}), 500
 
+def _get_citation_for_summary(upload_id: str, doi: str = "", arxiv_id: str = "", title: str = "") -> dict:
+    """Fetch a single citation record for summarization."""
+    doi = (doi or "").strip()
+    arxiv_id = (arxiv_id or "").strip()
+    title = (title or "").strip()
+
+    with sqlite3.connect("cited_papers.db") as conn:
+        cursor = conn.cursor()
+
+        if doi:
+            cursor.execute(
+                """
+                SELECT doi, arxiv_id, title, authors, abstract, year, full_text, url, raw_text
+                FROM cited_papers
+                WHERE upload_id = ? AND doi = ?
+                LIMIT 1
+                """,
+                (upload_id, doi),
+            )
+        elif arxiv_id:
+            cursor.execute(
+                """
+                SELECT doi, arxiv_id, title, authors, abstract, year, full_text, url, raw_text
+                FROM cited_papers
+                WHERE upload_id = ? AND arxiv_id = ?
+                LIMIT 1
+                """,
+                (upload_id, arxiv_id),
+            )
+        elif title:
+            cursor.execute(
+                """
+                SELECT doi, arxiv_id, title, authors, abstract, year, full_text, url, raw_text
+                FROM cited_papers
+                WHERE upload_id = ? AND title = ?
+                LIMIT 1
+                """,
+                (upload_id, title),
+            )
+        else:
+            return {}
+
+        row = cursor.fetchone()
+        if not row:
+            return {}
+        doi, arxiv_id, title, authors, abstract, year, full_text, url, raw_text = row
+        return {
+            "doi": doi or "",
+            "arxiv_id": arxiv_id or "",
+            "title": title or "",
+            "authors": authors or "",
+            "abstract": abstract or "",
+            "year": year,
+            "full_text": full_text or "",
+            "url": url or "",
+            "raw_text": raw_text or "",
+        }
+
+@app.route("/summarize-citation", methods=["POST"])
+def summarize_citation():
+    data = request.get_json() or {}
+    upload_id = data.get("uploadId")
+    if not upload_id:
+        return jsonify({"error": "Upload ID is required"}), 400
+
+    provider = data.get("provider")
+    if not provider or provider not in AI_PROVIDERS:
+        return jsonify({"error": "Invalid AI provider"}), 400
+    if not AI_PROVIDERS[provider]["enabled"]:
+        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+
+    citation = _get_citation_for_summary(
+        upload_id,
+        doi=data.get("doi", ""),
+        arxiv_id=data.get("arxiv_id", ""),
+        title=data.get("title", ""),
+    )
+    if not citation:
+        return jsonify({"error": "Citation not found"}), 404
+
+    prompt = f"""
+    You are an expert research assistant. Summarize the cited paper below using only the provided metadata/text.
+
+    Title: {citation.get('title','')}
+    Authors: {citation.get('authors','')}
+    Year: {citation.get('year','')}
+    DOI: {citation.get('doi','')}
+    arXiv: {citation.get('arxiv_id','')}
+    URL: {citation.get('url','')}
+
+    Abstract:
+    {citation.get('abstract','')}
+
+    Extracted Reference Text:
+    {citation.get('raw_text','')}
+
+    If full text excerpt is present, use it; otherwise say it's not available.
+    Full Text (may be empty):
+    {citation.get('full_text','')[:2000]}
+
+    Output in Markdown with sections:
+    - Summary (3-6 sentences)
+    - Key contributions (bullets)
+    - Methods / approach (bullets)
+    - When to cite this (bullets)
+    - Limitations / caveats (bullets)
+    """
+
+    try:
+        summary = run_async(get_ai_response(provider, prompt))
+        return jsonify({"summary": summary})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/summarize-citation/stream", methods=["POST"])
+def summarize_citation_stream():
+    data = request.get_json() or {}
+    upload_id = data.get("uploadId")
+    if not upload_id:
+        return jsonify({"error": "Upload ID is required"}), 400
+
+    provider = data.get("provider")
+    if not provider or provider not in AI_PROVIDERS:
+        return jsonify({"error": "Invalid AI provider"}), 400
+    if not AI_PROVIDERS[provider]["enabled"]:
+        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+
+    citation = _get_citation_for_summary(
+        upload_id,
+        doi=data.get("doi", ""),
+        arxiv_id=data.get("arxiv_id", ""),
+        title=data.get("title", ""),
+    )
+    if not citation:
+        return jsonify({"error": "Citation not found"}), 404
+
+    prompt = f"""
+    You are an expert research assistant. Summarize the cited paper below using only the provided metadata/text.
+
+    Title: {citation.get('title','')}
+    Authors: {citation.get('authors','')}
+    Year: {citation.get('year','')}
+    DOI: {citation.get('doi','')}
+    arXiv: {citation.get('arxiv_id','')}
+    URL: {citation.get('url','')}
+
+    Abstract:
+    {citation.get('abstract','')}
+
+    Extracted Reference Text:
+    {citation.get('raw_text','')}
+
+    Full Text (may be empty):
+    {citation.get('full_text','')[:2000]}
+
+    Output in Markdown with sections:
+    - Summary (3-6 sentences)
+    - Key contributions (bullets)
+    - Methods / approach (bullets)
+    - When to cite this (bullets)
+    - Limitations / caveats (bullets)
+    """
+
+    def generate():
+        yield _sse_event("start", {"ok": True})
+        full = ""
+        try:
+            for token in _iter_ai_stream(provider, prompt, temperature=0.7):
+                full += token
+                yield _sse_event("token", {"token": token})
+            yield _sse_event("done", {"ok": True, "text": full})
+        except Exception as e:
+            yield _sse_event("error", {"error": str(e)})
+
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    return Response(stream_with_context(generate()), mimetype="text/event-stream", headers=headers)
+
 def get_referenced_papers_context(conversation_id):
     """Fetch context from referenced papers for a given conversation."""
     try:
@@ -1258,12 +1981,67 @@ def explain_math():
     """
     
     try:
-        response = asyncio.run(get_ai_response(provider, prompt))
+        response = run_async(get_ai_response(provider, prompt))
         return jsonify({"explanation": response})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/explain-math/stream", methods=["POST"])
+def explain_math_stream():
+    data = request.get_json() or {}
+    provider = data.get("provider")
+    upload_id = data.get("uploadId")
+
+    if not upload_id:
+        return jsonify({"error": "Upload ID is required"}), 400
+    if not provider or provider not in AI_PROVIDERS:
+        return jsonify({"error": "Invalid AI provider"}), 400
+    if not AI_PROVIDERS[provider]["enabled"]:
+        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+
+    math_expression = data.get("expression", "")
+    context = data.get("context", "")
+
+    referenced_papers_context = get_referenced_papers_context(upload_id)
+
+    prompt = f"""
+    As an AI research assistant, please explain the following mathematical expression in detail:
+    
+    Mathematical Expression: {math_expression}
+    
+    Context from the paper:
+    {context}
+    
+    Referenced Papers Context:
+    {referenced_papers_context}
+    
+    Please structure your response in the following sections:
+    1. Basic Explanation
+    2. Variable Definitions
+    3. Mathematical Concepts
+    4. Relationship to Paper
+    5. Practical Applications
+    6. Related Equations
+    
+    Format your response using markdown for better readability.
+    Use LaTeX notation for mathematical expressions where appropriate, enclosed in $ symbols.
+    """
+
+    def generate():
+        yield _sse_event("start", {"ok": True})
+        full = ""
+        try:
+            for token in _iter_ai_stream(provider, prompt, temperature=0.7):
+                full += token
+                yield _sse_event("token", {"token": token})
+            yield _sse_event("done", {"ok": True, "text": full})
+        except Exception as e:
+            yield _sse_event("error", {"error": str(e)})
+
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    return Response(stream_with_context(generate()), mimetype="text/event-stream", headers=headers)
+
 if __name__ == '__main__':
     init_cited_papers_db()
-    logging.info("Starting Flask server in debug mode...")
-    app.run(debug=True, port=5000)
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    app.run(debug=debug, port=int(os.getenv("PORT", "5000")))

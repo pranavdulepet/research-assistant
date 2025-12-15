@@ -17,13 +17,17 @@ Features:
 - Allow user to annotate and write notes
 - Add “Chat with paper”
   - ask anything about the paper and get a response based on the paper's context and general knowledge
+- Add “Scope” to chat across multiple uploaded papers
 - Add “Ask AI to verify” (notes, annotation, etc.)
   - verify if notes are valid in the paper's context and general knowledge
   - searches the web to help verify notes
 - Add “Ask AI to answer” (any questions in annotations, this can be a specific type of “question” annotation)
   - answer the question based on the paper's context and general knowledge
   - searches the web to help answer questions
+- References panel: filter/search, add-to-chat, and streaming summaries
+- Math: select math-like text and click “Explain math”
+- Export annotations: export `.md` / `.json`
 
 Upcoming features:
 
-- explain math specifically and how it relates to the paper content
+- (TBD)

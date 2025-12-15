@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <title>DeepRead AI</title>
+    <title>Synopsis AI</title>
     <link
         href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700&family=Source+Sans+3:wght@300;400;500;600&display=swap"
         rel="stylesheet">
@@ -135,25 +135,6 @@
         #chatButton .material-icons {
             font-size: 20px;
             line-height: 1;
-        }
-
-        .user-message,
-        .ai-message,
-        .system-message {
-            font-family: var(--font-body);
-            font-weight: 400;
-        }
-
-        #sidebar .conversation-item {
-            font-family: var(--font-body);
-            font-weight: 400;
-            color: var(--color-primary-text);
-        }
-
-        .annotation-item {
-            font-family: var(--font-body);
-            font-weight: 400;
-            color: var(--color-primary-text);
         }
 
         /* Sidebar styling */
@@ -370,14 +351,13 @@
             transition: transform var(--transition-fast);
         }
 
-        /* Add zoom controls */
+        /* Zoom controls - hidden by default, shown via JS when paper loads */
         #zoomControls {
             display: none;
             position: fixed;
             bottom: 24px;
             left: 50%;
             transform: translateX(-50%);
-            display: flex;
             gap: var(--space-sm);
             background: var(--color-surface-elevated);
             padding: var(--space-sm) var(--space-md);
@@ -767,39 +747,6 @@
             border-color: var(--color-accent-primary);
         }
 
-        .user-message,
-        .ai-message,
-        .system-message {
-            padding: var(--space-md) var(--space-lg);
-            margin: var(--space-sm);
-            border-radius: var(--radius-lg);
-        }
-
-        .user-message {
-            background-color: var(--color-primary-text);
-            color: #ffffff;
-            border-bottom-right-radius: var(--radius-sm);
-        }
-
-        .ai-message {
-            background-color: var(--color-surface);
-            color: var(--color-primary-text);
-            border: 1px solid var(--color-border);
-            border-bottom-left-radius: var(--radius-sm);
-        }
-
-        .system-message {
-            background-color: var(--color-surface);
-            color: var(--color-secondary-text);
-            padding: var(--space-sm) var(--space-md);
-            margin: var(--space-xs);
-            border-radius: var(--radius-full);
-            max-width: 80%;
-            align-self: center;
-            font-size: 12px;
-            border: 1px solid var(--color-border);
-        }
-
         /* Upload prompt */
         #uploadPrompt {
             display: none;
@@ -897,7 +844,8 @@
             color: var(--color-tertiary-text);
             text-align: center;
             font-family: var(--font-body);
-            z-index: 100;
+            z-index: 50;
+            pointer-events: none;
             pointer-events: none;
         }
 
@@ -1021,7 +969,7 @@
             margin: 0 auto var(--space-md);
         }
 
-        /* Chat Interface Styling */
+        /* Chat Interface Styling - hidden by default, shown via .visible class */
         #chatInterface {
             display: none;
             position: fixed;
@@ -1032,7 +980,7 @@
             background: var(--color-surface-elevated);
             border: 1px solid var(--color-border);
             border-radius: var(--radius-lg);
-            z-index: 1000;
+            z-index: 1001;
             box-shadow: var(--shadow-lg);
             flex-direction: column;
             transition: all var(--transition-slow);
@@ -1040,16 +988,15 @@
             transform: scale(0);
             opacity: 0;
             overflow: hidden;
-            display: flex;
             resize: both;
             min-width: 400px;
             min-height: 600px;
         }
 
         #chatInterface.visible {
+            display: flex;
             transform: scale(1);
             opacity: 1;
-            display: flex;
         }
 
         #chatInterface.expanded {
@@ -1869,6 +1816,8 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf_viewer.css">
     <!-- Add marked.js library in the head section -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Sanitize markdown-rendered HTML (prod hardening) -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
 </head>
 
 <body>
@@ -1887,7 +1836,7 @@
         <div id="topbar">
             <div class="left-section">
                 <div class="brand-container">
-                    <p class="brand-name">DeepRead AI</p>
+                    <p class="brand-name">Synopsis AI</p>
                 </div>
             </div>
             <form id="uploadForm" method="POST" enctype="multipart/form-data" action="/upload">
@@ -1902,6 +1851,26 @@
                     Upload
                 </button>
                 <select id="aiProvider"></select>
+                <div id="exportMenuWrap" class="no-paper"
+                    style="position: relative; display: inline-flex; align-items: center;">
+                    <button id="exportMenuButton" type="button" class="secondary"
+                        style="height: 40px; width: 40px; padding: 0; border-radius: var(--radius-full); display:flex; align-items:center; justify-content:center;">
+                        <i class="material-icons">download</i>
+                    </button>
+                    <div id="exportMenu"
+                        style="display:none; position:absolute; top: 46px; right:0; background: var(--color-surface-elevated); border: 1px solid var(--color-border); border-radius: 12px; box-shadow: var(--shadow-md); padding: 8px; min-width: 160px; z-index: 2000;">
+                        <button id="exportMdButton" type="button" class="secondary"
+                            style="width:100%; justify-content:flex-start; gap: 8px;">
+                            <i class="material-icons">description</i>
+                            Export .md
+                        </button>
+                        <button id="exportJsonButton" type="button" class="secondary"
+                            style="width:100%; justify-content:flex-start; gap: 8px; margin-top: 6px;">
+                            <i class="material-icons">data_object</i>
+                            Export .json
+                        </button>
+                    </div>
+                </div>
             </form>
         </div>
         <div id="main">
@@ -1931,6 +1900,7 @@
             <p id="annotationPreview"
                 style="font-size: 13px; color: var(--color-secondary-text); text-align: center; font-style: italic; margin-bottom: var(--space-md);">
             </p>
+            <div id="annotationFiguresPreview" style="margin: 0 auto var(--space-md) auto; width: 90%;"></div>
 
             <!-- Add hidden select for compatibility -->
             <select id="annotationType" style="display: none;">
@@ -1964,6 +1934,7 @@
     <!-- Add selection popup menu -->
     <div id="selectionPopup">
         <button id="addAnnotationBtn">Add annotation</button>
+        <button id="explainMathBtn" style="display:none;">Explain math</button>
     </div>
 
     <div class="loading-overlay">
@@ -1979,6 +1950,10 @@
                 <button id="clearChatButton">
                     <i class="material-icons">delete_sweep</i>
                     Clear
+                </button>
+                <button id="chatScopeButton" class="secondary">
+                    <i class="material-icons">layers</i>
+                    Scope
                 </button>
                 <button id="expandChatButton">
                     <i class="material-icons">fullscreen</i>
@@ -2015,6 +1990,29 @@
             <button id="closeCitationsButton">
                 <i class="material-icons">close</i>
             </button>
+        </div>
+        <div
+            style="padding: 12px 24px; border-bottom: 1px solid var(--color-border); background: var(--color-surface);">
+            <input id="citationsSearch" placeholder="Search title/authors/abstract/DOI/arXiv"
+                style="width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-surface-elevated); font-size: 13px;" />
+            <div style="display:flex; gap: 10px; margin-top: 10px; align-items:center; flex-wrap: wrap;">
+                <select id="citationsTypeFilter"
+                    style="flex: 1; min-width: 140px; height: 36px; border-radius: var(--radius-full); border: 1px solid var(--color-border); padding: 0 12px; background: var(--color-surface-elevated);">
+                    <option value="all">All types</option>
+                    <option value="doi">DOI</option>
+                    <option value="arxiv">arXiv</option>
+                    <option value="title">Title-only</option>
+                </select>
+                <select id="citationsYearFilter"
+                    style="flex: 1; min-width: 120px; height: 36px; border-radius: var(--radius-full); border: 1px solid var(--color-border); padding: 0 12px; background: var(--color-surface-elevated);">
+                    <option value="all">All years</option>
+                </select>
+                <label
+                    style="display:flex; align-items:center; gap: 8px; font-size: 12px; color: var(--color-secondary-text);">
+                    <input type="checkbox" id="citationsFullTextOnly" />
+                    Full text only
+                </label>
+            </div>
         </div>
         <div id="citationsStatus" class="citations-status"></div>
         <div id="citationsList" class="citations-list"></div>
@@ -2069,6 +2067,14 @@
 
     <script>
         // Global variables for PDF rendering and conversation management.
+        const DEBUG = false;
+        function log(...args) { if (DEBUG) console.log(...args); }
+
+        function renderMarkdown(md) {
+            const html = marked.parse(md || '');
+            return window.DOMPurify ? DOMPurify.sanitize(html) : html;
+        }
+
         let pdfDoc = null;
         let currentAnnotations = []; // Annotations for the current PDF.
         let currentPdfUrl = "";
@@ -2078,6 +2084,7 @@
         let currentChatHistory = [];
         let currentZoom = 1.5; // Starting zoom level (matches your existing scale)
         let initialZoom = 1.5; // Store initial zoom for reset reference
+        let chatScopeUploadIds = []; // Defaults to currentConversationId; can include multiple uploaded papers.
 
         // Load persistent conversations from the server on page load.
         async function loadPersistentConversations() {
@@ -2180,6 +2187,69 @@
             document.getElementById('annotationPreview').innerHTML =
                 `<strong>Selected text:</strong> "${currentSelection.text}"<br>` +
                 `Page ${page} at (${Math.round(x)}, ${Math.round(y)})`;
+
+            // Show nearby figures/captions (if available) and allow insertion into the annotation
+            const figuresContainer = document.getElementById('annotationFiguresPreview');
+            figuresContainer.innerHTML = '';
+            const conv = conversations.find(c => c.id === currentConversationId);
+            const figures = conv?.extraction?.pages?.[page - 1]?.figures || [];
+            const figuresWithRefs = figures.filter(f => f && f.ref);
+
+            if (figuresWithRefs.length > 0) {
+                const header = document.createElement('div');
+                header.style.cssText = 'font-size: 11px; color: var(--color-tertiary-text); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;';
+                header.textContent = 'Figures on this page';
+                figuresContainer.appendChild(header);
+
+                figuresWithRefs.slice(0, 6).forEach((f) => {
+                    const row = document.createElement('div');
+                    row.style.cssText = 'background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 12px; padding: 10px; margin-bottom: 8px;';
+
+                    const title = document.createElement('div');
+                    title.style.cssText = 'font-weight: 600; font-size: 12px; margin-bottom: 6px;';
+                    title.textContent = f.ref;
+
+                    const caption = document.createElement('div');
+                    caption.style.cssText = 'font-size: 12px; color: var(--color-secondary-text); line-height: 1.5; margin-bottom: 8px;';
+                    caption.textContent = f.caption || 'No caption found.';
+
+                    const actions = document.createElement('div');
+                    actions.style.cssText = 'display:flex; gap: 8px;';
+
+                    const insertBtn = document.createElement('button');
+                    insertBtn.className = 'secondary';
+                    insertBtn.style.cssText = 'flex:1; font-size: 11px; padding: 6px 10px;';
+                    insertBtn.innerHTML = '<i class="material-icons">content_paste</i>Insert caption';
+                    insertBtn.addEventListener('click', () => {
+                        const ta = document.getElementById('annotationText');
+                        const text = f.caption || '';
+                        if (!text) return;
+                        const prefix = ta.value.trim().length ? '\n\n' : '';
+                        ta.value = ta.value + prefix + text;
+                        ta.focus();
+                    });
+
+                    const chatBtn = document.createElement('button');
+                    chatBtn.className = 'secondary';
+                    chatBtn.style.cssText = 'flex:1; font-size: 11px; padding: 6px 10px;';
+                    chatBtn.innerHTML = '<i class="material-icons">chat</i>Add to chat';
+                    chatBtn.addEventListener('click', () => {
+                        if (!chatInterface.classList.contains('visible')) chatButton.click();
+                        const parts = [`Figure ${f.ref}`];
+                        if (f.caption) parts.push(`Caption: ${f.caption}`);
+                        if (f.url) parts.push(`Image URL: ${f.url}`);
+                        addMessageToChat('system', parts.join('\n'));
+                    });
+
+                    actions.appendChild(insertBtn);
+                    actions.appendChild(chatBtn);
+
+                    row.appendChild(title);
+                    row.appendChild(caption);
+                    row.appendChild(actions);
+                    figuresContainer.appendChild(row);
+                });
+            }
         }
 
         // Cancel annotation modal.
@@ -2225,7 +2295,24 @@
 
             modal.style.display = "none";
             document.getElementById('annotationText').value = "";
+
+            // Auto-run AI to reduce clicks
+            const createdId = annotation.id;
+            const createdType = annotationType;
+            setTimeout(() => {
+                if (!currentConversationId) return;
+                if (createdType === 'note') askAIVerify(createdId);
+                if (createdType === 'question') askAIAnswer(createdId);
+            }, 50);
         });
+
+        function toggleInlineAI(contentId, buttonEl) {
+            const el = document.getElementById(contentId);
+            if (!el) return;
+            const isHidden = el.style.display === 'none' || !el.style.display;
+            el.style.display = isHidden ? 'block' : 'none';
+            if (buttonEl) buttonEl.textContent = isHidden ? 'Hide AI' : 'Show AI';
+        }
 
         // Render the annotation list in the right panel.
         function renderAnnotations(annotations) {
@@ -2257,6 +2344,27 @@
             annotations.forEach(ann => {
                 const div = document.createElement('div');
                 div.className = `annotation-item ${ann.type}`;
+
+                const inlineAiId = `inline-ai-${ann.id}`;
+                const inlineAiText = ann.type === 'note' ? (ann.aiVerification || '') : (ann.aiAnswer || '');
+                const inlineAiLabel = ann.type === 'note' ? 'AI Verification' : 'AI Answer';
+                const inlineAiHtml = inlineAiText
+                    ? `
+                        <div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--color-border-light);">
+                            <div style="display:flex; align-items:center; justify-content:space-between; gap: 8px;">
+                                <div style="font-size:11px; color: var(--color-tertiary-text); text-transform: uppercase; letter-spacing: 0.05em;">
+                                    ${inlineAiLabel}
+                                </div>
+                                <button class="secondary" style="font-size:11px; padding: 6px 10px;" onclick="toggleInlineAI('${inlineAiId}', this);">
+                                    Show AI
+                                </button>
+                            </div>
+                            <div id="${inlineAiId}" style="display:none; margin-top: 8px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: var(--space-md);">
+                                ${renderMarkdown(inlineAiText)}
+                            </div>
+                        </div>
+                    `
+                    : '';
 
                 // Define buttons based on annotation type
                 let actionButtons = `
@@ -2310,6 +2418,7 @@
                     <div class="metadata">Page ${ann.page} • ${ann.type}</div>
                     <div class="selected-text">"${ann.selectedText}"</div>
                     <div class="comment">${ann.comment}</div>
+                    ${inlineAiHtml}
                     <div class="actions">
                         ${actionButtons}
                         <button onclick="addToChat('${ann.id}');">
@@ -2338,6 +2447,26 @@
                     return;
                 }
 
+                // Open streaming response modal immediately
+                const modal = document.createElement('div');
+                modal.className = 'ai-response-modal';
+                modal.innerHTML = `
+                    <h3>
+                        <i class="material-icons">verified</i>
+                        AI Verification
+                    </h3>
+                    <div class="content" id="streamingVerificationContent"></div>
+                    <div class="actions">
+                        <button id="closeStreamingVerification">
+                            <i class="material-icons">close</i>
+                            Close
+                        </button>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                modal.querySelector('#closeStreamingVerification').addEventListener('click', () => modal.remove());
+                const contentDiv = modal.querySelector('#streamingVerificationContent');
+
                 // Get figures from the current page and surrounding pages
                 const pageNum = ann.page;
                 const relevantFigures = conv.extraction.pages
@@ -2353,33 +2482,39 @@
                     figures: relevantFigures
                 };
 
-                console.log("Sending verification request with data:", requestData);
+                log("Sending verification request with data:", requestData);
 
-                const response = await fetch('/verify-annotation', {
+                let raw = '';
+                let scheduled = false;
+                const render = () => {
+                    scheduled = false;
+                    contentDiv.innerHTML = renderMarkdown(raw);
+                };
+
+                await fetchSSE('/verify-annotation/stream', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestData)
+                }, {
+                    onToken: (tok) => {
+                        raw += tok;
+                        if (!scheduled) {
+                            scheduled = true;
+                            requestAnimationFrame(render);
+                        }
+                    },
+                    onDone: (fullText) => {
+                        const final = fullText || raw;
+                        conv.annotations.find(a => a.id === annotationId).aiVerification = final;
+                        persistConversations();
+                        renderAnnotations(conv.annotations);
+                        raw = final;
+                        render();
+                    },
+                    onError: (err) => {
+                        contentDiv.textContent = 'Error: ' + err;
+                    }
                 });
-
-                console.log("Got response:", response);
-                const result = await response.json();
-                console.log("Parsed result:", result);
-
-                if (result.error) {
-                    console.error("Error from server:", result.error);
-                    alert('Error: ' + result.error);
-                    return;
-                }
-
-                // Store the verification result
-                conv.annotations.find(a => a.id === annotationId).aiVerification = result.explanation;
-                persistConversations();
-                renderAnnotations(conv.annotations);
-
-                // Show the response
-                viewAIResponse(annotationId, 'verification');
             } catch (error) {
                 console.error('Error:', error);
                 alert('Failed to verify annotation');
@@ -2403,6 +2538,26 @@
                     return;
                 }
 
+                // Open streaming response modal immediately
+                const modal = document.createElement('div');
+                modal.className = 'ai-response-modal';
+                modal.innerHTML = `
+                    <h3>
+                        <i class="material-icons">question_answer</i>
+                        AI Answer
+                    </h3>
+                    <div class="content" id="streamingAnswerContent"></div>
+                    <div class="actions">
+                        <button id="closeStreamingAnswer">
+                            <i class="material-icons">close</i>
+                            Close
+                        </button>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+                modal.querySelector('#closeStreamingAnswer').addEventListener('click', () => modal.remove());
+                const contentDiv = modal.querySelector('#streamingAnswerContent');
+
                 // Get figures from the current page and surrounding pages
                 const pageNum = ann.page;
                 const relevantFigures = conv.extraction.pages
@@ -2418,33 +2573,39 @@
                     figures: relevantFigures
                 };
 
-                console.log("Sending answer request with data:", requestData);
+                log("Sending answer request with data:", requestData);
 
-                const response = await fetch('/answer-question', {
+                let raw = '';
+                let scheduled = false;
+                const render = () => {
+                    scheduled = false;
+                    contentDiv.innerHTML = renderMarkdown(raw);
+                };
+
+                await fetchSSE('/answer-question/stream', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestData)
+                }, {
+                    onToken: (tok) => {
+                        raw += tok;
+                        if (!scheduled) {
+                            scheduled = true;
+                            requestAnimationFrame(render);
+                        }
+                    },
+                    onDone: (fullText) => {
+                        const final = fullText || raw;
+                        conv.annotations.find(a => a.id === annotationId).aiAnswer = final;
+                        persistConversations();
+                        renderAnnotations(conv.annotations);
+                        raw = final;
+                        render();
+                    },
+                    onError: (err) => {
+                        contentDiv.textContent = 'Error: ' + err;
+                    }
                 });
-
-                console.log("Got response:", response);
-                const result = await response.json();
-                console.log("Parsed result:", result);
-
-                if (result.error) {
-                    console.error("Error from server:", result.error);
-                    alert('Error: ' + result.error);
-                    return;
-                }
-
-                // Store the answer
-                conv.annotations.find(a => a.id === annotationId).aiAnswer = result.answer;
-                persistConversations();
-                renderAnnotations(conv.annotations);
-
-                // Show the response
-                viewAIResponse(annotationId, 'answer');
             } catch (error) {
                 console.error('Error:', error);
                 alert('Failed to get AI answer');
@@ -2485,9 +2646,11 @@
             const conv = conversations.find(c => c.id === id);
             if (conv) {
                 currentConversationId = id;
+                chatScopeUploadIds = [id];
                 currentAnnotations = conv.annotations || [];
                 renderPDF(conv.pdf_url, currentAnnotations);
                 renderAnnotations(conv.annotations);
+                loadChatHistory(id);
                 document.getElementById('uploadPrompt').style.display = 'none';
                 document.getElementById('welcomePanel').style.display = 'none';
 
@@ -2496,6 +2659,7 @@
                 document.getElementById('right-panel').classList.remove('no-paper');
                 document.getElementById('chatButton').classList.remove('no-paper');
                 document.getElementById('citationsButton').classList.remove('no-paper');
+                document.getElementById('exportMenuWrap').classList.remove('no-paper');
                 document.getElementById('content').classList.remove('no-paper');
                 document.getElementById('main').classList.remove('no-paper');
                 document.getElementById('zoomControls').classList.remove('no-paper');
@@ -2534,6 +2698,7 @@
                     document.getElementById('right-panel').classList.add('no-paper');
                     document.getElementById('chatButton').classList.add('no-paper');
                     document.getElementById('citationsButton').classList.add('no-paper');
+                    document.getElementById('exportMenuWrap').classList.add('no-paper');
                     document.getElementById('content').classList.add('no-paper');
                     document.getElementById('main').classList.add('no-paper');
                     document.getElementById('zoomControls').classList.add('no-paper');
@@ -2559,7 +2724,7 @@
             setTimeout(() => {
                 chatInterface.style.display = 'none';
             }, 300);
-            chatButton.style.display = 'block';
+            chatButton.style.display = 'flex';
         }
 
         document.getElementById('uploadForm').addEventListener('submit', async function (e) {
@@ -2646,7 +2811,7 @@
         // Sidebar toggle functionality.
         document.getElementById('closeSidebar').addEventListener('click', function () {
             document.getElementById('sidebar').classList.add('closed');
-            document.getElementById('openSidebar').style.display = 'block';
+            document.getElementById('openSidebar').style.display = 'flex';
         });
         document.getElementById('openSidebar').addEventListener('click', function () {
             document.getElementById('sidebar').classList.remove('closed');
@@ -2677,6 +2842,7 @@
                 document.getElementById('right-panel').classList.add('no-paper');
                 document.getElementById('chatButton').classList.add('no-paper');
                 document.getElementById('citationsButton').classList.add('no-paper');
+                document.getElementById('exportMenuWrap').classList.add('no-paper');
                 document.getElementById('content').classList.add('no-paper');
                 document.getElementById('main').classList.add('no-paper');
                 document.getElementById('zoomControls').classList.add('no-paper');
@@ -2713,6 +2879,10 @@
                 width: rect.width,   // Add width of selection
                 height: rect.height  // Add height of selection
             };
+
+            const mathBtn = document.getElementById('explainMathBtn');
+            const looksMathy = /[=^_\\∑∫√≤≥≈]/.test(selectedText) || /\b\d+\s*\/\s*\d+\b/.test(selectedText);
+            mathBtn.style.display = looksMathy ? 'inline-flex' : 'none';
         }
 
         // Add selection popup button handler
@@ -2724,6 +2894,74 @@
                     currentSelection.y
                 );
                 document.getElementById('selectionPopup').style.display = 'none';
+            }
+        });
+
+        document.getElementById('explainMathBtn').addEventListener('click', async function () {
+            if (!currentSelection || !currentConversationId) return;
+            document.getElementById('selectionPopup').style.display = 'none';
+
+            const provider = getSelectedProvider();
+            const conv = conversations.find(c => c.id === currentConversationId);
+            const pageNum = currentSelection.page;
+
+            const modal = document.createElement('div');
+            modal.className = 'ai-response-modal';
+            modal.innerHTML = `
+                <h3>
+                    <i class="material-icons">functions</i>
+                    Math Explanation
+                </h3>
+                <div class="content" id="streamingMathContent"></div>
+                <div class="actions">
+                    <button onclick="this.closest('.ai-response-modal').remove()">
+                        <i class="material-icons">close</i>
+                        Close
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            const contentDiv = modal.querySelector('#streamingMathContent');
+
+            const requestData = {
+                provider,
+                uploadId: currentConversationId,
+                expression: currentSelection.text,
+                context: conv?.extraction?.pages?.[pageNum - 1]?.text || '',
+                paper_context: conv?.extraction || {}
+            };
+
+            showLoading('Explaining math...');
+            let raw = '';
+            let scheduled = false;
+            const render = () => {
+                scheduled = false;
+                contentDiv.innerHTML = renderMarkdown(raw);
+            };
+
+            try {
+                await fetchSSE('/explain-math/stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestData)
+                }, {
+                    onToken: (tok) => {
+                        raw += tok;
+                        if (!scheduled) {
+                            scheduled = true;
+                            requestAnimationFrame(render);
+                        }
+                    },
+                    onDone: (fullText) => {
+                        raw = fullText || raw;
+                        render();
+                    },
+                    onError: (err) => {
+                        contentDiv.textContent = 'Error: ' + err;
+                    }
+                });
+            } finally {
+                hideLoading();
             }
         });
 
@@ -2764,6 +3002,108 @@
         const chatMessages = document.getElementById('chatMessages');
         const chatInput = document.getElementById('chatInput');
         const sendChatButton = document.getElementById('sendChatButton');
+        const chatScopeButton = document.getElementById('chatScopeButton');
+        const exportMenuWrap = document.getElementById('exportMenuWrap');
+        const exportMenuButton = document.getElementById('exportMenuButton');
+        const exportMenu = document.getElementById('exportMenu');
+        const exportMdButton = document.getElementById('exportMdButton');
+        const exportJsonButton = document.getElementById('exportJsonButton');
+
+        function toggleExportMenu(show) {
+            if (!exportMenu) return;
+            const shouldShow = show !== undefined ? show : (exportMenu.style.display === 'none' || !exportMenu.style.display);
+            exportMenu.style.display = shouldShow ? 'block' : 'none';
+        }
+
+        exportMenuButton?.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            toggleExportMenu();
+        });
+
+        document.addEventListener('click', (e) => {
+            if (exportMenu && exportMenu.style.display === 'block') {
+                if (!exportMenuWrap.contains(e.target)) toggleExportMenu(false);
+            }
+        });
+
+        function triggerExport(fmt) {
+            if (!currentConversationId) return;
+            window.location.href = `/export/${currentConversationId}?format=${encodeURIComponent(fmt)}`;
+            toggleExportMenu(false);
+        }
+
+        exportMdButton?.addEventListener('click', () => triggerExport('md'));
+        exportJsonButton?.addEventListener('click', () => triggerExport('json'));
+
+        // Chat scope selector: choose which uploaded papers are included in retrieval.
+        chatScopeButton?.addEventListener('click', () => {
+            if (!conversations || conversations.length === 0) return;
+            const selected = new Set(chatScopeUploadIds && chatScopeUploadIds.length ? chatScopeUploadIds : (currentConversationId ? [currentConversationId] : []));
+
+            const modal = document.createElement('div');
+            modal.className = 'ai-response-modal';
+            modal.innerHTML = `
+                <h3>
+                    <i class="material-icons">layers</i>
+                    Chat Scope
+                </h3>
+                <div class="content" style="background: var(--color-background);">
+                    <p style="margin-top:0; color: var(--color-secondary-text); font-size: 13px;">
+                        Select uploaded papers to include in chat retrieval.
+                    </p>
+                    <div id="scopeList" style="display:flex; flex-direction:column; gap: 10px;"></div>
+                </div>
+                <div class="actions">
+                    <button id="scopeUseCurrent" class="secondary">
+                        <i class="material-icons">filter_1</i>
+                        Current only
+                    </button>
+                    <button id="scopeSave">
+                        <i class="material-icons">check</i>
+                        Save
+                    </button>
+                    <button id="scopeClose" class="secondary">
+                        <i class="material-icons">close</i>
+                        Close
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            const scopeList = modal.querySelector('#scopeList');
+            conversations.forEach(c => {
+                const row = document.createElement('label');
+                row.style.display = 'flex';
+                row.style.alignItems = 'center';
+                row.style.gap = '10px';
+                row.style.padding = '10px';
+                row.style.border = '1px solid var(--color-border)';
+                row.style.borderRadius = '12px';
+                row.style.background = 'var(--color-surface-elevated)';
+                row.innerHTML = `
+                    <input type="checkbox" ${selected.has(c.id) ? 'checked' : ''} data-upload-id="${c.id}" />
+                    <div style="display:flex; flex-direction:column;">
+                        <div style="font-weight:600; font-size: 13px;">${escapeHtml(c.title || c.id)}</div>
+                        <div style="font-size: 12px; color: var(--color-secondary-text);">${escapeHtml(c.id)}</div>
+                    </div>
+                `;
+                scopeList.appendChild(row);
+            });
+
+            modal.querySelector('#scopeClose').addEventListener('click', () => modal.remove());
+            modal.querySelector('#scopeUseCurrent').addEventListener('click', () => {
+                chatScopeUploadIds = currentConversationId ? [currentConversationId] : [];
+                modal.remove();
+            });
+            modal.querySelector('#scopeSave').addEventListener('click', () => {
+                const ids = Array.from(modal.querySelectorAll('input[type=\"checkbox\"][data-upload-id]'))
+                    .filter(cb => cb.checked)
+                    .map(cb => cb.getAttribute('data-upload-id'));
+                chatScopeUploadIds = ids.length ? ids : (currentConversationId ? [currentConversationId] : []);
+                modal.remove();
+            });
+        });
 
         chatButton.addEventListener('click', () => {
             chatInterface.style.display = 'flex';
@@ -2780,8 +3120,78 @@
             setTimeout(() => {
                 chatInterface.style.display = 'none';
             }, 300);
-            chatButton.style.display = 'block';
+            chatButton.style.display = 'flex';
         });
+
+        async function fetchSSE(url, options, handlers) {
+            const response = await fetch(url, options);
+            if (!response.ok) {
+                let msg = `${response.status} ${response.statusText}`;
+                try {
+                    const j = await response.json();
+                    if (j && j.error) msg = j.error;
+                } catch (_) { }
+                throw new Error(msg);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split('\n\n');
+                buffer = parts.pop() || '';
+
+                for (const part of parts) {
+                    const lines = part.split('\n').filter(Boolean);
+                    let event = 'message';
+                    let dataLines = [];
+                    for (const line of lines) {
+                        if (line.startsWith('event:')) event = line.slice(6).trim();
+                        if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+                    }
+                    const dataStr = dataLines.join('\n');
+                    let data = {};
+                    try { data = JSON.parse(dataStr); } catch (_) { data = { raw: dataStr }; }
+
+                    if (event === 'token' && handlers?.onToken) handlers.onToken(data.token || '');
+                    if (event === 'done' && handlers?.onDone) handlers.onDone(data.text || '');
+                    if (event === 'error' && handlers?.onError) handlers.onError(data.error || 'Unknown error');
+                    if (event === 'start' && handlers?.onStart) handlers.onStart(data);
+                }
+            }
+        }
+
+        function addStreamingAIMessage() {
+            const chatMessages = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'chat-message ai-message';
+            messageDiv.innerHTML = '';
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+
+            let raw = '';
+            let scheduled = false;
+            const render = () => {
+                scheduled = false;
+                messageDiv.innerHTML = renderMarkdown(raw);
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            };
+
+            return {
+                appendToken: (t) => {
+                    raw += t;
+                    if (!scheduled) {
+                        scheduled = true;
+                        requestAnimationFrame(render);
+                    }
+                },
+                finalize: () => raw,
+            };
+        }
 
         async function sendChatMessage(message) {
             if (!currentConversationId) {
@@ -2790,7 +3200,7 @@
             }
 
             addMessageToChat('user', message);
-            showLoading('AI is thinking...');
+            // Streaming renders tokens immediately; avoid flashing a loading overlay.
 
             try {
                 const provider = getSelectedProvider();
@@ -2813,24 +3223,30 @@
                     message: message,
                     provider: provider,
                     uploadId: currentConversationId,  // Add the upload ID
+                    uploadIds: (chatScopeUploadIds && chatScopeUploadIds.length ? chatScopeUploadIds : [currentConversationId]),
                     paper_context: conversations.find(c => c.id === currentConversationId).extraction,
                     annotations_context: annotationsContext
                 };
 
-                const response = await fetch('/chat-with-paper', {
+                const streaming = addStreamingAIMessage();
+                const multi = requestData.uploadIds && requestData.uploadIds.length > 1;
+                const streamUrl = multi ? '/chat-multi/stream' : '/chat-with-paper/stream';
+
+                await fetchSSE(streamUrl, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestData)
+                }, {
+                    onToken: (tok) => streaming.appendToken(tok),
+                    onDone: (fullText) => {
+                        const final = fullText || streaming.finalize();
+                        currentChatHistory.push({ role: 'ai', content: final });
+                        saveChatHistory();
+                    },
+                    onError: (err) => {
+                        addMessageToChat('system', 'Error: ' + err);
+                    }
                 });
-
-                const result = await response.json();
-                if (result.error) {
-                    throw new Error(result.error);
-                }
-
-                addMessageToChat('ai', result.response);
             } catch (error) {
                 console.error('Error:', error);
                 addMessageToChat('system', 'Error: ' + error.message);
@@ -2846,7 +3262,7 @@
 
             // Use marked to parse markdown for AI messages
             if (role === 'ai') {
-                messageDiv.innerHTML = marked.parse(content);
+                messageDiv.innerHTML = renderMarkdown(content);
             } else {
                 messageDiv.textContent = content;
             }
@@ -3047,7 +3463,7 @@
 
         function formatAIResponse(response) {
             // Parse the markdown content
-            let html = marked.parse(response);
+            let html = renderMarkdown(response);
 
             // Add section styling and icons
             html = html.replace(/<h2>Answer:/g, '<div class="response-section"><h3><i class="material-icons section-icon">lightbulb</i>Answer:</h3>');
@@ -3334,7 +3750,7 @@
             setTimeout(() => {
                 chatInterface.style.display = 'none';
             }, 300);
-            chatButton.style.display = 'block';
+            chatButton.style.display = 'flex';
         }
 
         // ============ Citations Drawer Functionality ============
@@ -3344,6 +3760,53 @@
         const citationsList = document.getElementById('citationsList');
         const citationsStatus = document.getElementById('citationsStatus');
         const citationsCount = document.getElementById('citationsCount');
+        const citationsSearch = document.getElementById('citationsSearch');
+        const citationsTypeFilter = document.getElementById('citationsTypeFilter');
+        const citationsYearFilter = document.getElementById('citationsYearFilter');
+        const citationsFullTextOnly = document.getElementById('citationsFullTextOnly');
+
+        let citationsCache = [];
+        let renderedCitations = [];
+
+        function getCitationType(c) {
+            if (c.doi) return 'doi';
+            if (c.arxiv_id) return 'arxiv';
+            return 'title';
+        }
+
+        function populateCitationsYearFilter(citations) {
+            const years = Array.from(new Set((citations || []).map(c => c.year).filter(Boolean))).sort((a, b) => b - a);
+            const current = citationsYearFilter.value || 'all';
+            citationsYearFilter.innerHTML = `<option value="all">All years</option>` + years.map(y => `<option value="${y}">${y}</option>`).join('');
+            citationsYearFilter.value = years.includes(parseInt(current)) ? current : 'all';
+        }
+
+        function applyCitationsFilters() {
+            const q = (citationsSearch.value || '').trim().toLowerCase();
+            const type = citationsTypeFilter.value || 'all';
+            const year = citationsYearFilter.value || 'all';
+            const fullOnly = !!citationsFullTextOnly.checked;
+
+            let filtered = (citationsCache || []).slice();
+            if (type !== 'all') filtered = filtered.filter(c => getCitationType(c) === type);
+            if (year !== 'all') filtered = filtered.filter(c => String(c.year || '') === String(year));
+            if (fullOnly) filtered = filtered.filter(c => !!c.hasFullText);
+            if (q) {
+                filtered = filtered.filter(c => {
+                    const hay = [
+                        c.title, c.authors, c.abstract, c.doi, c.arxiv_id, c.raw_text
+                    ].filter(Boolean).join(' ').toLowerCase();
+                    return hay.includes(q);
+                });
+            }
+
+            renderCitations(filtered, (citationsCache || []).length);
+        }
+
+        citationsSearch.addEventListener('input', () => applyCitationsFilters());
+        citationsTypeFilter.addEventListener('change', () => applyCitationsFilters());
+        citationsYearFilter.addEventListener('change', () => applyCitationsFilters());
+        citationsFullTextOnly.addEventListener('change', () => applyCitationsFilters());
 
         // Toggle citations drawer
         citationsButton.addEventListener('click', () => {
@@ -3384,7 +3847,9 @@
                     throw new Error(data.error);
                 }
 
-                renderCitations(data.citations, data.count);
+                citationsCache = data.citations || [];
+                populateCitationsYearFilter(citationsCache);
+                applyCitationsFilters();
             } catch (error) {
                 console.error('Error loading citations:', error);
                 citationsList.innerHTML = `
@@ -3398,9 +3863,10 @@
         }
 
         // Render citations in the drawer
-        function renderCitations(citations, count) {
+        function renderCitations(citations, totalCount) {
+            renderedCitations = citations || [];
             // Update count badge
-            citationsCount.textContent = count > 0 ? count : '';
+            citationsCount.textContent = totalCount > 0 ? totalCount : '';
 
             if (!citations || citations.length === 0) {
                 citationsList.innerHTML = `
@@ -3410,12 +3876,13 @@
                         <p style="font-size: 12px;">References will appear here once extracted from the paper.</p>
                     </div>
                 `;
-                citationsStatus.textContent = 'No references extracted yet.';
+                citationsStatus.textContent = totalCount ? 'No references match your filters.' : 'No references extracted yet.';
                 return;
             }
 
-            const withFullText = citations.filter(c => c.hasFullText).length;
-            citationsStatus.textContent = `${count} references found. ${withFullText} with accessible full text.`;
+            const withFullText = (citationsCache || []).filter(c => c.hasFullText).length;
+            const filteredCount = citations.length;
+            citationsStatus.textContent = `${filteredCount} shown of ${totalCount}. ${withFullText} total with accessible full text.`;
 
             citationsList.innerHTML = citations.map((citation, index) => {
                 const hasTitle = citation.title && citation.title !== citation.doi && citation.title !== citation.arxiv_id;
@@ -3444,6 +3911,16 @@
                             <div class="citation-abstract truncated" id="abstract-${index}">${escapeHtml(citation.abstract)}</div>
                             <button class="citation-abstract-toggle" onclick="toggleAbstract(${index})">Show more</button>
                         ` : ''}
+                        <div style="display:flex; gap: 8px; margin-top: 10px;">
+                            <button class="secondary" style="flex:1;" onclick="addCitationToChat(${index});">
+                                <i class="material-icons">chat</i>
+                                Add to Chat
+                            </button>
+                            <button style="flex:1;" onclick="summarizeCitation(${index});">
+                                <i class="material-icons">summarize</i>
+                                Summarize
+                            </button>
+                        </div>
                         ${citation.hasFullText ? '<span class="citation-badge">Full text available</span>' : ''}
                     </div>
                 `;
@@ -3469,6 +3946,92 @@
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        function addCitationToChat(index) {
+            const citation = renderedCitations[index];
+            if (!citation) return;
+
+            // Open chat if not already open
+            if (!chatInterface.classList.contains('visible')) {
+                chatButton.click();
+            }
+
+            const parts = [];
+            parts.push(`Citation: ${citation.title || citation.identifier || 'Untitled'}`);
+            if (citation.authors) parts.push(`Authors: ${citation.authors}`);
+            if (citation.year) parts.push(`Year: ${citation.year}`);
+            if (citation.doi) parts.push(`DOI: ${citation.doi}`);
+            if (citation.arxiv_id) parts.push(`arXiv: ${citation.arxiv_id}`);
+            if (citation.url) parts.push(`URL: ${citation.url}`);
+            if (citation.abstract) parts.push(`Abstract: ${citation.abstract}`);
+            const msg = parts.join('\n');
+            addMessageToChat('system', msg);
+        }
+
+        async function summarizeCitation(index) {
+            const citation = renderedCitations[index];
+            if (!citation || !currentConversationId) return;
+
+            const provider = getSelectedProvider();
+
+            const modal = document.createElement('div');
+            modal.className = 'ai-response-modal';
+            modal.innerHTML = `
+                <h3>
+                    <i class="material-icons">summarize</i>
+                    Citation Summary
+                </h3>
+                <div class="content" id="streamingCitationSummary"></div>
+                <div class="actions">
+                    <button onclick="this.closest('.ai-response-modal').remove()">
+                        <i class="material-icons">close</i>
+                        Close
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            const contentDiv = modal.querySelector('#streamingCitationSummary');
+
+            const requestData = {
+                provider,
+                uploadId: currentConversationId,
+                doi: citation.doi || '',
+                arxiv_id: citation.arxiv_id || '',
+                title: citation.title || ''
+            };
+
+            let raw = '';
+            let scheduled = false;
+            const render = () => {
+                scheduled = false;
+                contentDiv.innerHTML = renderMarkdown(raw);
+            };
+
+            try {
+                await fetchSSE('/summarize-citation/stream', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(requestData)
+                }, {
+                    onToken: (tok) => {
+                        raw += tok;
+                        if (!scheduled) {
+                            scheduled = true;
+                            requestAnimationFrame(render);
+                        }
+                    },
+                    onDone: (fullText) => {
+                        raw = fullText || raw;
+                        render();
+                    },
+                    onError: (err) => {
+                        contentDiv.textContent = 'Error: ' + err;
+                    }
+                });
+            } catch (e) {
+                contentDiv.textContent = 'Error: ' + (e.message || String(e));
+            }
         }
 
         // Update loadConversation to show/hide citations button
