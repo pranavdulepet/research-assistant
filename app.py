@@ -38,18 +38,18 @@ logging.basicConfig(
 
 app = Flask(__name__)
 
-# Canonical storage root for all uploads/artifacts.
+                                                   
 app.config['STORAGE_BASE'] = 'static/uploads'
 os.makedirs(app.config['STORAGE_BASE'], exist_ok=True)
 
-# File where conversation data will be stored.
+                                              
 CONVERSATIONS_FILE = "conversations.json"
 
-SPECIAL_THRESHOLD = 300  # threshold (in PDF points) for converting a figure to SVG
+SPECIAL_THRESHOLD = 300                                                            
 
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024                      
 
-# Warn if legacy duplicate upload dir exists (should not be used)
+                                                                 
 try:
     legacy_uploads = Path(__file__).resolve().parent / "app" / "static" / "uploads"
     if legacy_uploads.exists():
@@ -71,7 +71,7 @@ def run_async(coro):
 
 @app.after_request
 def add_security_headers(resp):
-    # Basic hardening headers (tweak if you embed in iframes etc.)
+                                                                  
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     resp.headers.setdefault("X-Frame-Options", "DENY")
     resp.headers.setdefault("Referrer-Policy", "no-referrer")
@@ -93,35 +93,28 @@ def server_error(e):
     return jsonify({"error": "Internal server error"}), 500
 
 
-# After load_dotenv(), add these debug prints:
-logging.info("Environment Variables Check:")
-logging.info("GEMINI_API_KEY present: %s", bool(os.getenv('GEMINI_API_KEY')))
-logging.info("OPENAI_API_KEY present: %s", bool(os.getenv('OPENAI_API_KEY')))
-
-# Configure AI Providers
-# "enabled" here means "supported by the app" (not "server has a key").
-# This app supports BYOK (Bring Your Own Key): users can provide their own key per request.
+                                             
 AI_PROVIDERS = {
     'gemini': {
         'id': 'gemini',
         'name': 'Google Gemini',
         'enabled': True,
-        'api_key': os.getenv("GEMINI_API_KEY")  # optional server key
+        'api_key': os.getenv("GEMINI_API_KEY")                       
     },
     'openai': {
         'id': 'openai',
         'name': 'OpenAI',
         'enabled': True,
-        'api_key': os.getenv("OPENAI_API_KEY")  # optional server key
+        'api_key': os.getenv("OPENAI_API_KEY")                       
     }
 }
 
-# Initialize server-side clients only if a server API key is present.
-# For BYOK, we create a short-lived client per request (no key storage).
+                                                                     
+                                                                        
 gemini_client = None
 openai_client = None
 if AI_PROVIDERS.get('gemini', {}).get('api_key'):
-    # Using new google-genai SDK
+                                
     gemini_client = genai.Client(api_key=AI_PROVIDERS['gemini']['api_key'])
     print("Gemini client initialized successfully with server key (google-genai SDK)")
 
@@ -142,7 +135,7 @@ def _extract_api_key(provider: str, data: dict | None = None) -> str | None:
             or data.get(f"{provider}_api_key")
             or data.get(f"{provider}ApiKey")
         )
-    # Provider-specific header names (nice for non-browser clients)
+                                                                   
     hdr = (
         request.headers.get("X-AI-API-Key")
         or request.headers.get("X-Api-Key")
@@ -206,7 +199,7 @@ def export_upload(upload_id):
             headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'},
         )
 
-    # Markdown default
+                      
     by_page = {}
     for a in annotations:
         page = a.get("page")
@@ -257,15 +250,15 @@ def export_upload(upload_id):
 def index():
     return render_template('index.html')
 
-# Add these global variables at the top level
+                                             
 background_tasks = {}
 background_tasks_lock = threading.Lock()
 progress_updates = Queue()
 
-# Email for Unpaywall API (configure via environment variable)
+                                                              
 UNPAYWALL_EMAIL = os.getenv("UNPAYWALL_EMAIL", "your-email@example.com")
 
-# Add this new class to manage background tasks
+                                               
 class BackgroundTask:
     def __init__(self, upload_id):
         self.upload_id = upload_id
@@ -285,33 +278,33 @@ def upload_pdf():
         logging.error("No selected file")
         return "No selected file", 400
 
-    # Basic validation
+                      
     filename = secure_filename(pdf_file.filename or "")
     if not filename.lower().endswith(".pdf"):
         return jsonify({"error": "Only PDF uploads are supported"}), 400
     if pdf_file.mimetype and pdf_file.mimetype not in ("application/pdf", "application/octet-stream"):
         return jsonify({"error": f"Invalid content type: {pdf_file.mimetype}"}), 400
     
-    # Create unique ID and directory structure
+                                              
     upload_id = str(uuid.uuid4())
     paths = create_upload_structure(upload_id)
     logging.info("Created upload structure for ID: %s", upload_id)
     
-    # Save the PDF
+                  
     pdf_path = paths['pdf_path'] / 'original.pdf'
     pdf_file.save(pdf_path)
     logging.info("Saved PDF to %s", pdf_path)
     
-    # Extract data (text and figures)
+                                     
     extraction_data = extract_text_and_figures(str(pdf_path), upload_id, paths['figures_path'])
     logging.info("Completed text and figure extraction")
     
-    # Initialize background task (thread-safe)
+                                              
     task = BackgroundTask(upload_id)
     with background_tasks_lock:
         background_tasks[upload_id] = task
     
-    # Start background processing
+                                 
     thread = threading.Thread(
         target=process_references_background,
         args=(str(pdf_path), upload_id, paths['citations_path'], task)
@@ -322,14 +315,14 @@ def upload_pdf():
         "upload_id": upload_id,
         "pdf_url": f"/static/uploads/{upload_id}/pdf/original.pdf",
         "extraction": extraction_data,
-        "task_id": upload_id  # Return task_id for progress tracking
+        "task_id": upload_id                                        
     }
     
     logging.info("Upload endpoint completed for ID: %s", upload_id)
     return jsonify(result)
 
 def convert_region_to_svg(pdf_path, page_number, bbox, output_svg):
-    # Round coordinates to integers.
+                                    
     x0, y0, x1, y1 = bbox
     x0, y0, x1, y1 = int(round(x0)), int(round(y0)), int(round(x1)), int(round(y1))
     width = x1 - x0
@@ -350,7 +343,7 @@ def convert_region_to_svg(pdf_path, page_number, bbox, output_svg):
     subprocess.run(command, check=True)
 
 def fix_math_extraction(text):
-    # Simple fixes: replace caret characters and "D X" if needed.
+                                                                 
     text = text.replace("ˆ", "^")
     text = text.replace("D X", "DX")
     return text
@@ -382,7 +375,7 @@ def extract_text_and_figures(pdf_path, upload_id, figures_path):
             block_text = fix_math_extraction(block_text)
             processed_blocks.append(block_text)
 
-        # Extract likely figure captions on this page
+                                                     
         captions_by_key = {}
         for t in processed_blocks:
             m = figure_caption_regex.match((t or "").strip())
@@ -421,7 +414,7 @@ def extract_text_and_figures(pdf_path, upload_id, figures_path):
                 else:
                     base_image = doc.extract_image(xref)
                     if isinstance(base_image, bool):
-                        # Skip this image if extraction failed
+                                                              
                         logging.warning(f"Failed to extract image with xref {xref} on page {page_index + 1}")
                         continue
                         
@@ -459,7 +452,7 @@ def extract_text_and_figures(pdf_path, upload_id, figures_path):
             if best_image:
                 best_image["assigned_ref"] = ref_obj["reference_text"]
 
-        # Attach captions (if found) to assigned figures
+                                                        
         for img_obj in figures_data:
             ref = img_obj.get("assigned_ref")
             key = _figure_num_key(ref)
@@ -502,30 +495,30 @@ def save_conversations_endpoint():
 @app.route("/delete-upload/<upload_id>", methods=["POST"])
 def delete_upload(upload_id):
     try:
-        # Get the base path for this upload
+                                           
         base_path = Path(app.config['STORAGE_BASE']) / upload_id
         
         if base_path.exists():
-            # Remove the entire directory structure for this upload including citations, chats, pdf, and figures.
+                                                                                                                 
             shutil.rmtree(base_path)
             logging.info("Deleted folder for upload_id: %s", upload_id)
             
-            # Delete corresponding cited papers from the database
+                                                                 
             delete_cited_papers(upload_id)
             
-            # Clean up document store for this upload
+                                                     
             with document_stores_lock:
                 if upload_id in document_stores:
                     del document_stores[upload_id]
                     logging.info("Cleaned up document store for upload_id: %s", upload_id)
             
-            # Clean up background task for this upload
+                                                      
             with background_tasks_lock:
                 if upload_id in background_tasks:
                     del background_tasks[upload_id]
                     logging.info("Cleaned up background task for upload_id: %s", upload_id)
             
-            # Update conversations.json accordingly
+                                                   
             conversations = load_conversations()
             conversations = [c for c in conversations if c['id'] != upload_id]
             save_conversations(conversations)
@@ -559,7 +552,7 @@ def verify_annotation():
     context = data.get("context", "")
     figures = data.get("figures", [])
     
-    # Perform web search for relevant information
+                                                 
     try:
         web_results = run_async(perform_web_search(f"{comment} {annotation_text}"))
         web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
@@ -567,13 +560,13 @@ def verify_annotation():
         print(f"Web search error: {str(e)}")
         web_context = ""
     
-    # Build context with figures
+                                
     figures_context = "\n".join([
         f"Figure {fig['ref']} (page {fig.get('page_number')}): {fig.get('caption') or 'No caption found.'}"
         for fig in figures if fig.get('ref')
     ])
     
-    # Get referenced papers context
+                                   
     referenced_papers_context = get_referenced_papers_context(upload_id)
     
     prompt = f"""
@@ -646,7 +639,7 @@ def verify_annotation():
             "error": str(e)
         }), 500
 
-# Add this new class for document chunking and embedding
+                                                        
 class DocumentStore:
     def __init__(self):
         self.vectorizer = TfidfVectorizer(stop_words='english')
@@ -655,7 +648,7 @@ class DocumentStore:
         
     def add_document(self, text: str, chunk_size: int = 512, overlap: int = 128):
         """Split document into overlapping chunks and compute TF-IDF vectors."""
-        # Split into sentences first
+                                    
         sentences = text.split('. ')
         chunks = []
         current_chunk = []
@@ -668,15 +661,15 @@ class DocumentStore:
             if current_length >= chunk_size:
                 chunk_text = '. '.join(current_chunk)
                 chunks.append(chunk_text)
-                # Keep last few sentences for overlap
+                                                     
                 current_chunk = current_chunk[-overlap:]
                 current_length = sum(len(s) for s in current_chunk)
         
-        # Add final chunk if it exists
+                                      
         if current_chunk:
             chunks.append('. '.join(current_chunk))
         
-        # Store chunks and compute TF-IDF vectors
+                                                 
         self.chunks = chunks
         self.vectors = self.vectorizer.fit_transform(chunks)
         
@@ -687,11 +680,11 @@ class DocumentStore:
         top_k_indices = similarities[0].argsort()[-k:][::-1]
         return [self.chunks[i] for i in top_k_indices]
 
-# Add this to store document embeddings
+                                       
 document_stores = {}
 document_stores_lock = threading.Lock()
 
-# Separate stores for whole-paper chat retrieval (avoid mixing with per-request context stores)
+                                                                                               
 paper_document_stores = {}
 paper_document_stores_lock = threading.Lock()
 
@@ -701,7 +694,7 @@ def _html_to_text(html: str) -> str:
         soup = BeautifulSoup(html or "", "html.parser")
         return soup.get_text(separator=" ", strip=True)
     except Exception:
-        # Fallback: strip tags crudely
+                                      
         return re.sub(r"<[^>]+>", " ", html or "")
 
 def _paper_context_to_plaintext(paper_context: Dict) -> str:
@@ -717,7 +710,7 @@ def _text_digest(text: str, max_chars: int = 200_000) -> str:
     t = (text or "")[:max_chars]
     return hashlib.sha256(t.encode("utf-8", errors="ignore")).hexdigest()
 
-# Update the answer_question function
+                                     
 @app.route("/answer-question", methods=["POST"])
 def answer_question():
     try:
@@ -740,24 +733,24 @@ def answer_question():
         selected_text = data.get("selectedText", "")
         figures = data.get("figures", [])
         
-        # Initialize or get document store for this upload (thread-safe)
+                                                                        
         with document_stores_lock:
             if upload_id not in document_stores:
                 doc_store = DocumentStore()
                 doc_store.add_document(context)
                 document_stores[upload_id] = doc_store
             
-            # Get most relevant chunks for the question
+                                                       
             relevant_chunks = document_stores[upload_id].search(question, k=3)
         context_text = "\n\n".join(relevant_chunks)
         
-        # Build context with figures
+                                    
         figures_context = "\n".join([
             f"Figure {fig['ref']} (page {fig.get('page_number')}): {fig.get('caption') or 'No caption found.'}"
             for fig in figures if fig.get('ref')
         ])
         
-        # Get referenced papers context
+                                       
         referenced_papers_context = get_referenced_papers_context(upload_id)
         
         print(f"Question: {question}\n\n")
@@ -839,14 +832,14 @@ def chat_with_paper():
     paper_context = data.get("paper_context", {})
     annotations_context = data.get("annotations_context", "")
     
-    # Build plaintext and retrieve only the most relevant chunks (avoid sending full paper each request)
+                                                                                                        
     full_text_plain = _paper_context_to_plaintext(paper_context)
     digest = _text_digest(full_text_plain)
     with paper_document_stores_lock:
         cached = paper_document_stores.get(upload_id)
         if not cached or cached.get("digest") != digest:
             ds = DocumentStore()
-            # Larger chunks for chat; overlap via the existing sentence-window behavior
+                                                                                       
             ds.add_document(full_text_plain, chunk_size=1200, overlap=4)
             paper_document_stores[upload_id] = {"digest": digest, "store": ds}
         doc_store = paper_document_stores[upload_id]["store"]
@@ -858,10 +851,10 @@ def chat_with_paper():
 
     context_text = "\n\n---\n\n".join(relevant_chunks) if relevant_chunks else (full_text_plain[:6000] if full_text_plain else "")
     
-    # Get referenced papers context
+                                   
     referenced_papers_context = get_referenced_papers_context(upload_id)
     
-    # Perform web search
+                        
     try:
         web_results = run_async(perform_web_search(message))
         web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
@@ -912,7 +905,7 @@ def chat_with_paper():
 
 @app.route("/ai-providers", methods=["GET"])
 def get_ai_providers():
-    # Return all supported providers; indicate whether server is configured with a key.
+                                                                                       
     return jsonify({
         "providers": [
             {
@@ -932,7 +925,7 @@ def create_upload_structure(upload_id):
     figures_path = base_path / 'figures'
     chats_path = base_path / 'chats'
     citations_path = base_path / 'citations'   
-    # Create directories
+                        
     pdf_path.mkdir(parents=True, exist_ok=True)
     figures_path.mkdir(parents=True, exist_ok=True)
     chats_path.mkdir(parents=True, exist_ok=True)
@@ -967,13 +960,13 @@ def get_chat_history(upload_id):
     base_path = Path(app.config['STORAGE_BASE']) / upload_id / 'chats'
     chat_file = base_path / 'history.json'
     
-    # Create directory if it doesn't exist
+                                          
     base_path.mkdir(parents=True, exist_ok=True)
     
     if chat_file.exists():
         with open(chat_file) as f:
             return json.load(f)
-    # Initialize empty chat history file if it doesn't exist
+                                                            
     save_chat_history(upload_id, [])
     return []
 
@@ -982,7 +975,7 @@ def save_chat_history(upload_id, chat_history):
     base_path = Path(app.config['STORAGE_BASE']) / upload_id / 'chats'
     chat_file = base_path / 'history.json'
     
-    # Ensure the chats directory exists
+                                       
     base_path.mkdir(parents=True, exist_ok=True)
     
     with open(chat_file, 'w') as f:
@@ -1017,20 +1010,20 @@ async def get_ai_response(provider, prompt, temperature=0.7, api_key: str | None
     logging.debug("Provider supported: %s", AI_PROVIDERS.get(provider, {}).get('enabled', False))
     
     try:
-        # Extract the actual content to search for
+                                                  
         search_query = ""
         if "verify" in prompt.lower():
-            # Extract both the comment and selected text from the prompt
+                                                                        
             comment_match = re.search(r'User\'s Comment/Claim: "(.*?)"', prompt)
             text_match = re.search(r'Selected Text: "(.*?)"', prompt)
             search_query = f"{comment_match.group(1) if comment_match else ''} {text_match.group(1) if text_match else ''}"
         elif "answer" in prompt.lower():
-            # Extract both the question and selected text from the prompt
+                                                                         
             question_match = re.search(r'Question: "(.*?)"', prompt)
             text_match = re.search(r'Selected Text: "(.*?)"', prompt)
             search_query = f"{question_match.group(1) if question_match else ''} {text_match.group(1) if text_match else ''}"
         
-        # Clean up search query
+                               
         search_query = search_query.strip()
         if search_query:
             web_results = await perform_web_search(search_query)
@@ -1094,7 +1087,7 @@ def _iter_gemini_stream(prompt: str, temperature: float = 0.7, api_key: str | No
     if not key:
         raise Exception("No Gemini API key provided.")
     client = genai.Client(api_key=key)
-    # Prefer streaming API when available
+                                         
     stream_fn = getattr(client.models, "generate_content_stream", None)
     if callable(stream_fn):
         for chunk in stream_fn(
@@ -1106,7 +1099,7 @@ def _iter_gemini_stream(prompt: str, temperature: float = 0.7, api_key: str | No
             if text:
                 yield text
         return
-    # Fallback: single-shot response
+                                    
     resp = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt,
@@ -1116,11 +1109,11 @@ def _iter_gemini_stream(prompt: str, temperature: float = 0.7, api_key: str | No
         yield resp.text
 
 def _iter_ai_stream(provider: str, prompt: str, temperature: float = 0.7, api_key: str | None = None):
-    # For now, stream Gemini; OpenAI streaming can be added once enabled.
+                                                                         
     if provider == "gemini":
         yield from _iter_gemini_stream(prompt, temperature=temperature, api_key=api_key)
     elif provider == "openai" and AI_PROVIDERS.get("openai", {}).get("enabled"):
-        # Fallback to non-stream until OpenAI is enabled and verified.
+                                                                      
         text = run_async(get_ai_response(provider, prompt, temperature=temperature, api_key=api_key))
         yield text
     else:
@@ -1147,7 +1140,7 @@ def chat_with_paper_stream():
     paper_context = data.get("paper_context", {})
     annotations_context = data.get("annotations_context", "")
 
-    # Same retrieval behavior as non-streaming endpoint
+                                                       
     full_text_plain = _paper_context_to_plaintext(paper_context)
     digest = _text_digest(full_text_plain)
     with paper_document_stores_lock:
@@ -1166,7 +1159,7 @@ def chat_with_paper_stream():
 
     referenced_papers_context = get_referenced_papers_context(upload_id)
 
-    # Perform web search (single pass)
+                                      
     try:
         web_results = run_async(perform_web_search(message))
         web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
@@ -1235,7 +1228,7 @@ def chat_multi_stream():
     message = data.get("message", "")
     annotations_context = data.get("annotations_context", "")
 
-    # Load stored conversations to get extraction payloads/titles
+                                                                 
     convs = load_conversations()
     conv_map = {c.get("id"): c for c in convs if isinstance(c, dict) and c.get("id")}
 
@@ -1272,7 +1265,7 @@ def chat_multi_stream():
     if not paper_blocks:
         return jsonify({"error": "No papers found/loaded for the provided uploadIds"}), 400
 
-    # Web search (single pass)
+                              
     try:
         web_results = run_async(perform_web_search(message))
         web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
@@ -1336,7 +1329,7 @@ def verify_annotation_stream():
     context = data.get("context", "")
     figures = data.get("figures", [])
 
-    # Web search for relevant information
+                                         
     try:
         web_results = run_async(perform_web_search(f"{comment} {annotation_text}"))
         web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
@@ -1412,7 +1405,7 @@ def answer_question_stream():
     selected_text = data.get("selectedText", "")
     figures = data.get("figures", [])
 
-    # Retrieval (same approach as /answer-question)
+                                                   
     with document_stores_lock:
         if upload_id not in document_stores:
             doc_store = DocumentStore()
@@ -1470,7 +1463,7 @@ def store_cited_paper(metadata, full_text, upload_id, db_path="cited_papers.db")
     year = metadata.get("year")
     raw_text = metadata.get("raw_text", "") or ""
     authors_data = metadata.get("author", [])
-    # Handle authors as either a string or list of dicts
+                                                        
     if isinstance(authors_data, str):
         authors = authors_data
     elif isinstance(authors_data, list) and authors_data:
@@ -1481,7 +1474,7 @@ def store_cited_paper(metadata, full_text, upload_id, db_path="cited_papers.db")
     else:
         authors = ""
     abstract = metadata.get("abstract", "") or ""
-    # Determine the URL from "link" if available or fallback to "URL".
+                                                                      
     url = ""
     links = metadata.get("link", [])
     if isinstance(links, list) and len(links) > 0:
@@ -1491,13 +1484,13 @@ def store_cited_paper(metadata, full_text, upload_id, db_path="cited_papers.db")
     if not url:
         url = metadata.get("URL", "") or ""
     
-    # Need at least a title or some identifier to store
+                                                       
     if not doi and not arxiv_id and not title and not raw_text:
         logging.warning("Skipping paper without any identifier, title, or raw text")
         return
     
-    # Generate a unique key for deduplication
-    # Use DOI > arXiv ID > title hash > raw_text hash as the unique identifier
+                                             
+                                                                              
     if doi:
         unique_key = f"doi:{doi}"
     elif arxiv_id:
@@ -1529,11 +1522,11 @@ def fetch_full_text(url):
         if response.status_code == 200:
             html = response.text
             soup = BeautifulSoup(html, "html.parser")
-            # Remove unwanted tags
+                                  
             for script in soup(["script", "style"]):
                 script.decompose()
             text = soup.get_text(separator="\n")
-            # Simplify whitespace
+                                 
             text = "\n".join([line.strip() for line in text.splitlines() if line.strip()])
             logging.info("Fetched full text from %s", url)
             return text
@@ -1544,17 +1537,13 @@ def fetch_full_text(url):
         logging.error("Exception fetching full text from %s: %s", url, str(e))
         return None
 
-# After configuring AI_PROVIDERS, add detailed debug logging:
-print("\nInitialized AI Providers:")
-for provider_id, info in AI_PROVIDERS.items():
-    print(f"{provider_id}: enabled = {info['enabled']}, api_key = {'set' if info['api_key'] else 'not set'}")
-
+                                                             
 def init_cited_papers_db(db_path="cited_papers.db"):
     """Initialize the SQLite database to store cited paper content."""
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     
-    # Create table with a unique_key column for proper deduplication
+                                                                    
     c.execute('''
         CREATE TABLE IF NOT EXISTS cited_papers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1574,14 +1563,14 @@ def init_cited_papers_db(db_path="cited_papers.db"):
         )
     ''')
     
-    # Add columns if they don't exist (for existing databases)
+                                                              
     for column, coltype in [('arxiv_id', 'TEXT'), ('year', 'INTEGER'), ('raw_text', 'TEXT'), ('unique_key', 'TEXT')]:
         try:
             c.execute(f'ALTER TABLE cited_papers ADD COLUMN {column} {coltype}')
         except sqlite3.OperationalError:
-            pass  # Column already exists
+            pass                         
     
-    # Create index for faster lookups
+                                     
     try:
         c.execute('CREATE INDEX IF NOT EXISTS idx_upload_id ON cited_papers(upload_id)')
     except sqlite3.OperationalError:
@@ -1606,11 +1595,11 @@ def delete_cited_papers(upload_id, db_path="cited_papers.db"):
 
 def process_references_background(pdf_path, upload_id, citations_path, task):
     try:
-        # Update initial progress
+                                 
         task.progress = 10
         task.status = "Extracting references from PDF..."
         
-        # Extract references (returns list of dicts with type, id, query)
+                                                                         
         references = extract_references_from_pdf(pdf_path)
         task.progress = 30
         
@@ -1621,7 +1610,7 @@ def process_references_background(pdf_path, upload_id, citations_path, task):
         logging.info("Found %d references to process", total_refs)
         
         for ref_info in references:
-            # Update progress based on processed references
+                                                           
             processed_refs += 1
             if total_refs > 0:
                 task.progress = 30 + int((processed_refs / total_refs) * 60)
@@ -1634,13 +1623,13 @@ def process_references_background(pdf_path, upload_id, citations_path, task):
             task.status = f"Processing reference {processed_refs}/{total_refs}: {ref_type}"
             
             try:
-                # Fetch paper metadata using Semantic Scholar, OpenAlex, or Crossref
+                                                                                    
                 paper_metadata = fetch_paper_metadata(ref_info, UNPAYWALL_EMAIL)
             except Exception as e:
                 logging.warning("API error for reference %s: %s", ref_id[:30], str(e))
                 paper_metadata = None
             
-            # Even if lookup fails, store what we have from extraction
+                                                                      
             if not paper_metadata:
                 logging.info("Using extracted data for reference: %s", ref_id[:50])
                 paper_metadata = {
@@ -1654,26 +1643,26 @@ def process_references_background(pdf_path, upload_id, citations_path, task):
                     'source': 'extracted'
                 }
             
-            # Get DOI for Unpaywall lookup
+                                          
             doi = paper_metadata.get('doi') or (ref_id if ref_type == 'doi' else None)
             
-            # Try to get full text URL
+                                      
             oa_pdf_url = None
             full_text = None
             
-            # Check for arXiv URL first (most reliable for CS papers)
+                                                                     
             arxiv_id = paper_metadata.get('arxiv_id') or (ref_id if ref_type == 'arxiv' else None)
             if arxiv_id:
                 oa_pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
             
-            # Try Unpaywall for DOI-based papers
+                                                
             if not oa_pdf_url and doi:
                 try:
                     oa_pdf_url = get_open_access_pdf_url(doi, UNPAYWALL_EMAIL)
                 except Exception as e:
                     logging.debug("Unpaywall lookup failed for %s: %s", doi, str(e))
             
-            # Build metadata record - ALWAYS store the reference
+                                                                
             metadata = {
                 "DOI": doi or "",
                 "arxiv_id": arxiv_id or "",
@@ -1684,17 +1673,17 @@ def process_references_background(pdf_path, upload_id, citations_path, task):
                 "year": paper_metadata.get("year"),
                 "link": [{"URL": oa_pdf_url}] if oa_pdf_url else [],
                 "URL": oa_pdf_url or paper_metadata.get("url", ""),
-                "raw_text": raw_text[:500] if raw_text else ""  # Store raw text as fallback
+                "raw_text": raw_text[:500] if raw_text else ""                              
             }
             store_cited_paper(metadata, full_text, upload_id)
             citations.append(metadata)
         
-        # Save citations
+                        
         citations_file = citations_path / "citations.json"
         with open(citations_file, "w") as f:
             json.dump(citations, f, indent=2)
         
-        # Update task completion
+                                
         task.progress = 100
         task.status = f"Complete - {len(citations)} references processed"
         task.result = citations
@@ -1722,7 +1711,7 @@ def task_progress(task_id):
         "result": task.result
     }
     
-    # Clean up completed tasks after client has retrieved the result
+                                                                    
     if task.progress == 100:
         with background_tasks_lock:
             if task_id in background_tasks:
@@ -1748,10 +1737,10 @@ def get_citations(upload_id):
             
             citations = []
             for doi, arxiv_id, title, authors, abstract, year, url, raw_text in papers:
-                # Create identifier for display
+                                               
                 identifier = doi or (f"arXiv:{arxiv_id}" if arxiv_id else None)
                 
-                # Use raw_text as fallback for title if no proper title
+                                                                       
                 display_title = title
                 if not title or title == doi or title == arxiv_id:
                     display_title = raw_text[:200] if raw_text else None
@@ -1960,11 +1949,11 @@ def summarize_citation_stream():
 def get_referenced_papers_context(conversation_id):
     """Fetch context from referenced papers for a given conversation."""
     try:
-        # Connect to your SQLite database
+                                         
         with sqlite3.connect("cited_papers.db") as conn:
             cursor = conn.cursor()
             
-            # Query to get referenced papers for the conversation
+                                                                 
             cursor.execute("""
                 SELECT doi, arxiv_id, title, authors, abstract, year, full_text, url
                 FROM cited_papers
@@ -1976,7 +1965,7 @@ def get_referenced_papers_context(conversation_id):
             if not papers:
                 return ""
             
-            # Format the context
+                                
             context = f"\n=== {len(papers)} Referenced Papers ===\n"
             for doi, arxiv_id, title, authors, abstract, year, full_text, url in papers:
                 context += f"\n--- Referenced Paper ---"
@@ -2024,7 +2013,7 @@ def explain_math():
     context = data.get("context", "")
     paper_context = data.get("paper_context", {})
     
-    # Get referenced papers context
+                                   
     referenced_papers_context = get_referenced_papers_context(upload_id)
     
     prompt = f"""

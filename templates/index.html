@@ -1809,19 +1809,14 @@
             background-color: rgba(45, 106, 79, 0.2);
         }
     </style>
-    <!-- Include PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js"></script>
-    <!-- Add PDF.js text layer CSS -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf_viewer.css">
-    <!-- Add marked.js library in the head section -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <!-- Sanitize markdown-rendered HTML (prod hardening) -->
     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.7/dist/purify.min.js"></script>
 </head>
 
 <body>
-    <!-- Sidebar for conversation list -->
     <div id="sidebar">
         <div class="sidebar-header">
             <h3>Papers</h3>
@@ -1831,7 +1826,6 @@
     </div>
     <button id="openSidebar"><i class="material-icons">menu</i></button>
 
-    <!-- Main Content Area -->
     <div id="content">
         <div id="topbar">
             <div class="left-section">
@@ -1878,14 +1872,11 @@
             </form>
         </div>
         <div id="main">
-            <!-- Left panel: PDF viewer -->
             <div id="left-panel">
                 <div id="uploadPrompt">
-                    <!-- <h2>Upload a research paper to get started...</h2> -->
                 </div>
                 <div id="pdfViewer"></div>
             </div>
-            <!-- Right panel: Extraction data and annotations list -->
             <div id="right-panel">
                 <h3>Annotations</h3>
                 <div id="annotationList"></div>
@@ -1897,7 +1888,6 @@
         </div>
     </div>
 
-    <!-- Annotation Modal for PDF annotations -->
     <div id="annotationModal">
         <div id="annotationModalContent">
             <h3>Add Annotation</h3>
@@ -1906,7 +1896,6 @@
             </p>
             <div id="annotationFiguresPreview" style="margin: 0 auto var(--space-md) auto; width: 90%;"></div>
 
-            <!-- Add hidden select for compatibility -->
             <select id="annotationType" style="display: none;">
                 <option value="note" selected>Note</option>
                 <option value="question">Question</option>
@@ -1935,7 +1924,6 @@
         </div>
     </div>
 
-    <!-- Add selection popup menu -->
     <div id="selectionPopup">
         <button id="addAnnotationBtn">Add annotation</button>
         <button id="explainMathBtn" style="display:none;">Explain math</button>
@@ -1946,7 +1934,6 @@
         <div class="loading-text">Processing...</div>
     </div>
 
-    <!-- Chat Interface -->
     <div id="chatInterface">
         <div class="chat-header">
             <h3>Chat with Paper</h3>
@@ -1977,14 +1964,12 @@
         </div>
     </div>
 
-    <!-- Citations Button -->
     <button id="citationsButton" class="no-paper">
         <i class="material-icons">library_books</i>
         References
         <span id="citationsCount" class="citations-count"></span>
     </button>
 
-    <!-- Citations Drawer -->
     <div id="citationsDrawer" class="citations-drawer">
         <div class="citations-header">
             <h3>
@@ -2026,7 +2011,6 @@
         This tool can make mistakes. Check important info.
     </div>
 
-    <!-- Add this after the loading overlay -->
     <div id="welcomePanel">
         <h2>Get Started</h2>
         <div class="step-container">
@@ -2056,21 +2040,18 @@
         </div>
     </div>
 
-    <!-- Add this before the right panel div -->
     <div id="zoomControls">
         <button onclick="adjustZoom(-0.25)"><i class="material-icons">remove</i></button>
         <span id="zoomLevel">100%</span>
         <button onclick="adjustZoom(0.25)"><i class="material-icons">add</i></button>
     </div>
 
-    <!-- Progress bar container with a label, displayed at bottom left -->
     <div id="progressBarContainer" style="display:none;">
         <div id="progressBar"></div>
         <span id="progressLabel">0%</span>
     </div>
 
     <script>
-        // Global variables for PDF rendering and conversation management.
         const DEBUG = false;
         function log(...args) { if (DEBUG) console.log(...args); }
 
@@ -2090,7 +2071,6 @@
         let initialZoom = 1.5; // Store initial zoom for reset reference
         let chatScopeUploadIds = []; // Defaults to currentConversationId; can include multiple uploaded papers.
 
-        // Load persistent conversations from the server on page load.
         async function loadPersistentConversations() {
             const res = await fetch("/conversations");
             conversations = await res.json();
@@ -2100,7 +2080,6 @@
             }
         }
 
-        // Persist the conversation list to the server.
         async function persistConversations() {
             await fetch("/conversations", {
                 method: "POST",
@@ -2109,7 +2088,6 @@
             });
         }
 
-        // Render the PDF using PDF.js with annotation overlays.
         async function renderPDF(url, annotations) {
             currentPdfUrl = url;
             const viewer = document.getElementById('pdfViewer');
@@ -2127,13 +2105,11 @@
                 pageDiv.style.position = "relative";
                 pageDiv.dataset.pageNumber = pageNum;
 
-                // Canvas layer
                 const canvas = document.createElement('canvas');
                 canvas.width = viewport.width;
                 canvas.height = viewport.height;
                 pageDiv.appendChild(canvas);
 
-                // Text layer
                 const textLayerDiv = document.createElement('div');
                 textLayerDiv.className = 'textLayer';
                 textLayerDiv.style.width = viewport.width + "px";
@@ -2142,11 +2118,9 @@
 
                 viewer.appendChild(pageDiv);
 
-                // Render page content
                 const context = canvas.getContext('2d');
                 await page.render({ canvasContext: context, viewport: viewport }).promise;
 
-                // Render text layer
                 const textContent = await page.getTextContent();
                 pdfjsLib.renderTextLayer({
                     textContent: textContent,
@@ -2155,10 +2129,8 @@
                     textDivs: []
                 });
 
-                // Add event listener to text layer for selection
                 textLayerDiv.addEventListener('mouseup', handleTextSelection);
 
-                // Render existing annotation markers
                 if (annotations) {
                     annotations.filter(a => a.page === pageNum).forEach(a => {
                         addAnnotationMarker(pageDiv, a);
@@ -2168,7 +2140,6 @@
             updateZoomDisplay();
         }
 
-        // Update the addAnnotationMarker function to use selection coordinates
         function addAnnotationMarker(pageDiv, annotation) {
             const marker = document.createElement('div');
             marker.className = `annotation-marker ${annotation.type}`; // Add type class
@@ -2181,7 +2152,6 @@
             pageDiv.appendChild(marker);
         }
 
-        // Open the annotation modal for a given page and coordinate.
         function openAnnotationModal(page, x, y) {
             const modal = document.getElementById('annotationModal');
             modal.style.display = "block";
@@ -2192,7 +2162,6 @@
                 `<strong>Selected text:</strong> "${currentSelection.text}"<br>` +
                 `Page ${page} at (${Math.round(x)}, ${Math.round(y)})`;
 
-            // Show nearby figures/captions (if available) and allow insertion into the annotation
             const figuresContainer = document.getElementById('annotationFiguresPreview');
             figuresContainer.innerHTML = '';
             const conv = conversations.find(c => c.id === currentConversationId);
@@ -2256,13 +2225,11 @@
             }
         }
 
-        // Cancel annotation modal.
         document.getElementById('cancelAnnotation').addEventListener('click', function () {
             document.getElementById('annotationModal').style.display = "none";
             document.getElementById('annotationText').value = "";
         });
 
-        // Update the saveAnnotation click handler to include dimensions
         document.getElementById('saveAnnotation').addEventListener('click', function () {
             const comment = document.getElementById('annotationText').value.trim();
             if (!comment) {
@@ -2300,7 +2267,6 @@
             modal.style.display = "none";
             document.getElementById('annotationText').value = "";
 
-            // Auto-run AI to reduce clicks
             const createdId = annotation.id;
             const createdType = annotationType;
             setTimeout(() => {
@@ -2318,7 +2284,6 @@
             if (buttonEl) buttonEl.textContent = isHidden ? 'Hide AI' : 'Show AI';
         }
 
-        // Render the annotation list in the right panel.
         function renderAnnotations(annotations) {
             const list = document.getElementById('annotationList');
             list.innerHTML = '';
@@ -2370,7 +2335,6 @@
                     `
                     : '';
 
-                // Define buttons based on annotation type
                 let actionButtons = `
                     <button onclick="scrollToAnnotation('${ann.id}');">
                         <i class="material-icons">location_searching</i>
@@ -2378,7 +2342,6 @@
                     </button>
                 `;
 
-                // Add verify button and response viewer for notes
                 if (ann.type === 'note') {
                     actionButtons += `
                         <button onclick="askAIVerify('${ann.id}');">
@@ -2394,7 +2357,6 @@
                     `;
                 }
 
-                // Add answer button and response viewer for questions
                 if (ann.type === 'question') {
                     actionButtons += `
                         <button onclick="askAIAnswer('${ann.id}');">
@@ -2410,7 +2372,6 @@
                     `;
                 }
 
-                // Add delete button for all types
                 actionButtons += `
                     <button onclick="deleteAnnotation('${ann.id}');">
                         <i class="material-icons">delete</i>
@@ -2435,7 +2396,6 @@
             });
         }
 
-        // AI verification function
         async function askAIVerify(annotationId) {
             showLoading('AI is verifying the annotation...');
             try {
@@ -2452,7 +2412,6 @@
                     return;
                 }
 
-                // Open streaming response modal immediately
                 const modal = document.createElement('div');
                 modal.className = 'ai-response-modal';
                 modal.innerHTML = `
@@ -2472,7 +2431,6 @@
                 modal.querySelector('#closeStreamingVerification').addEventListener('click', () => modal.remove());
                 const contentDiv = modal.querySelector('#streamingVerificationContent');
 
-                // Get figures from the current page and surrounding pages
                 const pageNum = ann.page;
                 const relevantFigures = conv.extraction.pages
                     .filter(p => Math.abs(p.page_number - pageNum) <= 1)
@@ -2545,7 +2503,6 @@
                     return;
                 }
 
-                // Open streaming response modal immediately
                 const modal = document.createElement('div');
                 modal.className = 'ai-response-modal';
                 modal.innerHTML = `
@@ -2565,7 +2522,6 @@
                 modal.querySelector('#closeStreamingAnswer').addEventListener('click', () => modal.remove());
                 const contentDiv = modal.querySelector('#streamingAnswerContent');
 
-                // Get figures from the current page and surrounding pages
                 const pageNum = ann.page;
                 const relevantFigures = conv.extraction.pages
                     .filter(p => Math.abs(p.page_number - pageNum) <= 1)
@@ -2622,7 +2578,6 @@
             }
         }
 
-        // Delete an annotation.
         function deleteAnnotation(annId) {
             const conv = conversations.find(c => c.id === currentConversationId);
             if (conv) {
@@ -2634,7 +2589,6 @@
             }
         }
 
-        // Sidebar and conversation management.
         function renderSidebar() {
             const list = document.getElementById('conversationList');
             list.innerHTML = '';
@@ -2662,7 +2616,6 @@
                 document.getElementById('uploadPrompt').style.display = 'none';
                 document.getElementById('welcomePanel').style.display = 'none';
 
-                // Remove no-paper class from elements
                 document.getElementById('sidebar').classList.remove('no-paper');
                 document.getElementById('right-panel').classList.remove('no-paper');
                 document.getElementById('chatButton').classList.remove('no-paper');
@@ -2686,12 +2639,10 @@
 
                 conversations = conversations.filter(c => c.id !== id);
                 if (currentConversationId === id) {
-                    // Clear the PDF viewer more thoroughly
                     const pdfViewer = document.getElementById('pdfViewer');
                     pdfViewer.innerHTML = "";
                     pdfViewer.style.display = 'none';
 
-                    // Close and clear chat interface
                     closeChatInterface();
                     currentChatHistory = [];
                     document.getElementById('chatMessages').innerHTML = "";
@@ -2699,7 +2650,6 @@
                     document.getElementById('annotationList').innerHTML = "";
                     currentConversationId = null;
 
-                    // Show welcome panel and add no-paper class to elements
                     document.getElementById('welcomePanel').style.display = 'block';
                     document.getElementById('uploadPrompt').style.display = 'block';
                     document.getElementById('sidebar').classList.add('no-paper');
@@ -2712,7 +2662,6 @@
                     document.getElementById('zoomControls').classList.add('no-paper');
                     document.getElementById('zoomControls').style.display = 'none';
 
-                    // Close citations drawer
                     document.getElementById('citationsDrawer').classList.remove('visible');
                     document.getElementById('citationsCount').textContent = '';
 
@@ -2723,7 +2672,6 @@
             }
         }
 
-        // Add new helper function to close chat interface
         function closeChatInterface() {
             const chatInterface = document.getElementById('chatInterface');
             const chatButton = document.getElementById('chatButton');
@@ -2738,7 +2686,6 @@
         document.getElementById('uploadForm').addEventListener('submit', async function (e) {
             e.preventDefault();
 
-            // Show progress bar
             const progressBarContainer = document.getElementById("progressBarContainer");
             const progressBar = document.getElementById("progressBar");
             const progressLabel = document.getElementById("progressLabel");
@@ -2754,7 +2701,6 @@
                 }
                 const data = await response.json();
 
-                // Create and display the conversation immediately with the PDF
                 const conv = {
                     id: data.upload_id,
                     title: formData.get("pdfFile").name,
@@ -2766,11 +2712,9 @@
                 conversations.push(conv);
                 renderSidebar();
 
-                // Load the conversation and render the PDF immediately
                 await loadConversation(conv.id);
                 persistConversations();
 
-                // Start polling for progress in background
                 const taskId = data.task_id;
                 const pollInterval = setInterval(async () => {
                     const progressResponse = await fetch(`/task-progress/${taskId}`);
@@ -2781,25 +2725,21 @@
                         throw new Error(progressData.error);
                     }
 
-                    // Update progress bar
                     progressBar.style.width = `${progressData.progress}%`;
                     progressLabel.textContent = `${progressData.status} (${progressData.progress}%)`;
 
                     if (progressData.complete) {
                         clearInterval(pollInterval);
 
-                        // Update the conversation with citations from the background task
                         conv.citations = progressData.result;
                         persistConversations();
 
-                        // Hide progress after a brief delay
                         setTimeout(() => {
                             progressBarContainer.style.display = "none";
                         }, 500);
                     }
                 }, 1000); // Poll every second
 
-                // Reset file input UI state
                 this.reset();
                 const fileLabel = document.querySelector('.custom-file-upload');
                 const fileNameDisplay = document.querySelector('.file-name-display');
@@ -2816,7 +2756,6 @@
             }
         });
 
-        // Sidebar toggle functionality.
         document.getElementById('closeSidebar').addEventListener('click', function () {
             document.getElementById('sidebar').classList.add('closed');
             document.getElementById('openSidebar').style.display = 'flex';
@@ -2826,7 +2765,6 @@
             document.getElementById('openSidebar').style.display = 'none';
         });
 
-        // Simple UUID generator.
         function uuidv4() {
             return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
                 var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
@@ -2834,18 +2772,15 @@
             });
         }
 
-        // Load persistent conversations when the page loads.
         window.onload = function () {
             loadPersistentConversations();
             loadAIProviders();
 
-            // Show welcome panel and hide elements if no paper is displayed
             if (conversations.length === 0 || !currentConversationId) {
                 document.getElementById('uploadPrompt').style.display = 'block';
                 document.getElementById('chatButton').classList.add('disabled');
                 document.getElementById('welcomePanel').style.display = 'block';
 
-                // Add no-paper class to elements
                 document.getElementById('sidebar').classList.add('no-paper');
                 document.getElementById('right-panel').classList.add('no-paper');
                 document.getElementById('chatButton').classList.add('no-paper');
@@ -2858,7 +2793,6 @@
             }
         }
 
-        // Update the handleTextSelection function to capture selection dimensions
         function handleTextSelection(event) {
             const selection = window.getSelection();
             const selectedText = selection.toString().trim();
@@ -2893,7 +2827,6 @@
             mathBtn.style.display = looksMathy ? 'inline-flex' : 'none';
         }
 
-        // Add selection popup button handler
         document.getElementById('addAnnotationBtn').addEventListener('click', function () {
             if (currentSelection) {
                 openAnnotationModal(
@@ -2981,7 +2914,6 @@
             }
         });
 
-        // Close selection popup when clicking outside
         document.addEventListener('mousedown', function (event) {
             if (!event.target.closest('#selectionPopup')) {
                 document.getElementById('selectionPopup').style.display = 'none';
@@ -2989,14 +2921,12 @@
         });
 
         function showLoading(message = 'Processing...') {
-            // For chat-specific loading, use the loading overlay inside chat interface
             if (message === 'AI is thinking...') {
                 const chatOverlay = document.querySelector('#chatInterface .loading-overlay');
                 const text = chatOverlay.querySelector('.loading-text');
                 text.textContent = message;
                 chatOverlay.style.display = 'flex';
             } else {
-                // For other loading scenarios, use the main loading overlay
                 const overlay = document.querySelector('body > .loading-overlay');
                 const text = overlay.querySelector('.loading-text');
                 text.textContent = message;
@@ -3005,13 +2935,11 @@
         }
 
         function hideLoading() {
-            // Hide both loading overlays
             document.querySelectorAll('.loading-overlay').forEach(overlay => {
                 overlay.style.display = 'none';
             });
         }
 
-        // Chat functionality
         const chatButton = document.getElementById('chatButton');
         const chatInterface = document.getElementById('chatInterface');
         const closeChatButton = document.getElementById('closeChatButton');
@@ -3052,7 +2980,6 @@
         exportMdButton?.addEventListener('click', () => triggerExport('md'));
         exportJsonButton?.addEventListener('click', () => triggerExport('json'));
 
-        // Chat scope selector: choose which uploaded papers are included in retrieval.
         chatScopeButton?.addEventListener('click', () => {
             if (!conversations || conversations.length === 0) return;
             const selected = new Set(chatScopeUploadIds && chatScopeUploadIds.length ? chatScopeUploadIds : (currentConversationId ? [currentConversationId] : []));
@@ -3123,7 +3050,6 @@
 
         chatButton.addEventListener('click', () => {
             chatInterface.style.display = 'flex';
-            // Small delay to trigger animation
             setTimeout(() => {
                 chatInterface.classList.add('visible');
             }, 10);
@@ -3132,7 +3058,6 @@
 
         closeChatButton.addEventListener('click', () => {
             chatInterface.classList.remove('visible');
-            // Wait for animation to complete before hiding
             setTimeout(() => {
                 chatInterface.style.display = 'none';
             }, 300);
@@ -3216,14 +3141,12 @@
             }
 
             addMessageToChat('user', message);
-            // Streaming renders tokens immediately; avoid flashing a loading overlay.
 
             try {
                 const provider = getSelectedProvider();
                 const apiKey = ensureApiKey(provider);
                 const conv = conversations.find(c => c.id === currentConversationId);
 
-                // Format annotations context
                 const annotationsContext = conv.annotations.map(ann => {
                     let context = `Selected Text: "${ann.selectedText}"\n`;
                     context += `${ann.type === 'note' ? 'Note' : 'Question'}: ${ann.comment}\n`;
@@ -3278,7 +3201,6 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = `chat-message ${role}-message`;
 
-            // Use marked to parse markdown for AI messages
             if (role === 'ai') {
                 messageDiv.innerHTML = renderMarkdown(content);
             } else {
@@ -3309,7 +3231,6 @@
             }
         });
 
-        // Add new function to load chat history
         async function loadChatHistory(conversationId) {
             try {
                 const response = await fetch(`/chat-history/${conversationId}`);
@@ -3321,7 +3242,6 @@
             }
         }
 
-        // Add function to render chat history
         function renderChatHistory() {
             const chatMessages = document.getElementById('chatMessages');
             chatMessages.innerHTML = '';
@@ -3330,7 +3250,6 @@
             });
         }
 
-        // Add function to save chat history
         async function saveChatHistory() {
             if (!currentConversationId) return;
 
@@ -3347,7 +3266,6 @@
             }
         }
 
-        // Add file selection handler
         document.querySelector('input[type="file"]').addEventListener('change', function (e) {
             const fileName = e.target.files[0]?.name;
             const fileLabel = e.target.closest('.custom-file-upload');
@@ -3365,7 +3283,6 @@
             }
         });
 
-        // Update the scrollToAnnotation function to account for zoom
         function scrollToAnnotation(annotationId) {
             const conv = conversations.find(c => c.id === currentConversationId);
             if (!conv) return;
@@ -3376,22 +3293,18 @@
             const pageDiv = document.querySelector(`.pdf-page[data-page-number="${annotation.page}"]`);
             if (!pageDiv) return;
 
-            // Calculate the scaled position
             const scaledY = (annotation.y * currentZoom) + pageDiv.offsetTop;
 
-            // Scroll the page into view with the scaled position
             document.getElementById('left-panel').scrollTo({
                 top: scaledY - window.innerHeight / 2,
                 behavior: 'smooth'
             });
 
-            // Flash the annotation marker with type-specific color
             const marker = pageDiv.querySelector(`.annotation-marker[data-annotation-id="${annotationId}"]`);
             if (marker) {
                 marker.style.transition = 'all 0.3s ease';
                 marker.style.transform = 'scale(1.5)';
 
-                // Set highlight color based on annotation type
                 if (annotation.type === 'note') {
                     marker.style.background = 'rgba(26, 54, 93, 0.8)'; // #1a365d
                 } else if (annotation.type === 'question') {
@@ -3400,7 +3313,6 @@
 
                 setTimeout(() => {
                     marker.style.transform = 'scale(1)';
-                    // Reset to original transparency
                     if (annotation.type === 'note') {
                         marker.style.background = 'rgba(26, 54, 93, 0.3)';
                     } else if (annotation.type === 'question') {
@@ -3410,7 +3322,6 @@
             }
         }
 
-        // BYOK (Bring Your Own Key) support: store user keys locally and send per request.
         const API_KEYS_STORAGE_KEY = 'synopsis_ai_api_keys_v1';
         let aiProvidersMeta = {}; // providerId -> { serverConfigured, enabled, name }
 
@@ -3535,7 +3446,6 @@
             });
         }
 
-        // Add this after window.onload
         async function loadAIProviders() {
             try {
                 const response = await fetch('/ai-providers');
@@ -3544,7 +3454,6 @@
                 select.innerHTML = ''; // Clear existing options
                 aiProvidersMeta = {};
 
-                // Add available providers from the backend
                 data.providers.forEach(provider => {
                     const option = document.createElement('option');
                     option.value = provider.id;
@@ -3558,7 +3467,6 @@
                     };
                 });
 
-                // If no providers are available, add a default disabled option
                 if (data.providers.length === 0) {
                     const option = document.createElement('option');
                     option.textContent = 'No AI providers available';
@@ -3570,12 +3478,10 @@
             }
         }
 
-        // Update the existing functions to include the selected provider
         function getSelectedProvider() {
             return document.getElementById('aiProvider').value;
         }
 
-        // Add new function to view AI responses
         function viewAIResponse(annotationId, type) {
             const conv = conversations.find(c => c.id === currentConversationId);
             const ann = conv.annotations.find(a => a.id === annotationId);
@@ -3585,7 +3491,6 @@
             const response = type === 'verification' ? ann.aiVerification : ann.aiAnswer;
             if (!response) return;
 
-            // Create modal HTML with enhanced styling and section organization
             const modalHtml = `
                 <div class="ai-response-modal">
                     <h3>
@@ -3611,25 +3516,20 @@
         }
 
         function formatAIResponse(response) {
-            // Parse the markdown content
             let html = renderMarkdown(response);
 
-            // Add section styling and icons
             html = html.replace(/<h2>Answer:/g, '<div class="response-section"><h3><i class="material-icons section-icon">lightbulb</i>Answer:</h3>');
             html = html.replace(/<h2>Paper Evidence:/g, '<div class="response-section"><h3><i class="material-icons section-icon">description</i>Paper Evidence:</h3>');
             html = html.replace(/<h2>Web Sources:/g, '<div class="response-section"><h3><i class="material-icons section-icon">public</i>Web Sources:</h3>');
             html = html.replace(/<h2>General Knowledge:/g, '<div class="response-section"><h3><i class="material-icons section-icon">psychology</i>General Knowledge:</h3>');
 
-            // Add closing div for sections
             html = html.replace(/<h2>/g, '</div><h2>');
 
-            // Style web citations
             html = html.replace(
                 /\[(.*?)\]\((https?:\/\/[^\s\)]+)\)/g,
                 '<div class="web-citation">📚 <a href="$2" target="_blank">$1</a></div>'
             );
 
-            // Style paper quotes
             html = html.replace(
                 /(".*?")\s*from the paper/g,
                 '<div class="paper-citation">$1</div>'
@@ -3638,7 +3538,6 @@
             return html;
         }
 
-        // Update loading state display
         function showAILoading() {
             return `
                 <div class="ai-response-loading">
@@ -3648,13 +3547,11 @@
             `;
         }
 
-        // Add clear chat functionality
         document.getElementById('clearChatButton').addEventListener('click', async () => {
             if (confirm('Are you sure you want to clear the chat history?')) {
                 currentChatHistory = [];
                 document.getElementById('chatMessages').innerHTML = '';
 
-                // Save empty chat history to server
                 if (currentConversationId) {
                     try {
                         await fetch(`/chat-history/${currentConversationId}`, {
@@ -3671,9 +3568,7 @@
             }
         });
 
-        // Add this function
         function selectAnnotationType(type) {
-            // Update buttons
             document.querySelectorAll('.type-selector').forEach(btn => {
                 btn.classList.remove('selected');
                 if (btn.dataset.type === type) {
@@ -3681,11 +3576,9 @@
                 }
             });
 
-            // Update hidden select value
             document.getElementById('annotationType').value = type;
         }
 
-        // Add this to initialize the UI when modal opens
         document.getElementById('addAnnotationBtn').addEventListener('click', function () {
             if (currentSelection) {
                 openAnnotationModal(
@@ -3693,13 +3586,11 @@
                     currentSelection.x,
                     currentSelection.y
                 );
-                // Select default type (note)
                 selectAnnotationType('note');
                 document.getElementById('selectionPopup').style.display = 'none';
             }
         });
 
-        // Add these new functions
         function adjustZoom(delta) {
             const newZoom = currentZoom + delta;
             if (newZoom >= 0.5 && newZoom <= 3) { // Limit zoom range
@@ -3713,12 +3604,9 @@
             document.getElementById('zoomLevel').textContent = `${percentage}%`;
         }
 
-        // Add this function to check task status on page load
         async function checkExistingTasks() {
-            // Get all conversations
             const conversations = await fetch('/conversations').then(r => r.json());
 
-            // Check each conversation for incomplete tasks
             for (const conv of conversations) {
                 const taskId = conv.id; // Using conversation id as task id
                 try {
@@ -3726,7 +3614,6 @@
                     const progressData = await progressResponse.json();
 
                     if (!progressData.complete) {
-                        // Show and update progress bar
                         const progressBarContainer = document.getElementById("progressBarContainer");
                         const progressBar = document.getElementById("progressBar");
                         const progressLabel = document.getElementById("progressLabel");
@@ -3734,7 +3621,6 @@
                         progressBar.style.width = `${progressData.progress}%`;
                         progressLabel.textContent = `${progressData.status} (${progressData.progress}%)`;
 
-                        // Start polling for this task
                         startProgressPolling(taskId, conv);
                     }
                 } catch (error) {
@@ -3743,7 +3629,6 @@
             }
         }
 
-        // Extract polling logic to separate function
         function startProgressPolling(taskId, conv) {
             const progressBarContainer = document.getElementById("progressBarContainer");
             const progressBar = document.getElementById("progressBar");
@@ -3759,18 +3644,15 @@
                         throw new Error(progressData.error);
                     }
 
-                    // Update progress bar
                     progressBar.style.width = `${progressData.progress}%`;
                     progressLabel.textContent = `${progressData.status} (${progressData.progress}%)`;
 
                     if (progressData.complete) {
                         clearInterval(pollInterval);
 
-                        // Update the conversation with citations from the background task
                         conv.citations = progressData.result;
                         persistConversations();
 
-                        // Hide progress after a brief delay
                         setTimeout(() => {
                             progressBarContainer.style.display = "none";
                         }, 500);
@@ -3782,17 +3664,12 @@
             }, 1000);
         }
 
-        // Modify the upload form handler to use the new polling function
         document.getElementById('uploadForm').addEventListener('submit', async function (e) {
-            // ... existing code until conversation creation ...
 
-            // Start polling for progress in background
             startProgressPolling(data.task_id, conv);
 
-            // ... rest of existing code ...
         });
 
-        // Add this to your initialization code (e.g., at the end of the file or in DOMContentLoaded)
         document.addEventListener('DOMContentLoaded', function () {
             checkExistingTasks();
             document.getElementById('apiKeysButton')?.addEventListener('click', () => {
@@ -3800,23 +3677,19 @@
             });
         });
 
-        // Add this function to handle adding annotations to chat
         function addToChat(annotationId) {
             const conv = conversations.find(c => c.id === currentConversationId);
             const ann = conv.annotations.find(a => a.id === annotationId);
 
             if (!ann) return;
 
-            // Open chat if not already open
             if (!chatInterface.classList.contains('visible')) {
                 chatButton.click();
             }
 
-            // Add annotation to chat as system message
             let messageContent = `**Selected Text:** "${ann.selectedText}"\n\n`;
             messageContent += `**${ann.type === 'note' ? 'Note' : 'Question'}:** ${ann.comment}\n\n`;
 
-            // Add verification/answer if available
             if (ann.aiVerification) {
                 messageContent += `**AI Verification:**\n${ann.aiVerification}\n\n`;
             }
@@ -3826,11 +3699,9 @@
 
             addMessageToChat('system', messageContent);
 
-            // Focus chat input
             chatInput.focus();
         }
 
-        // Add this JavaScript code after the existing chat interface code
         const expandChatButton = document.getElementById('expandChatButton');
         let isExpanded = false;
 
@@ -3838,22 +3709,18 @@
             isExpanded = !isExpanded;
             chatInterface.classList.toggle('expanded');
 
-            // Update icon based on state
             expandChatButton.querySelector('.material-icons').textContent =
                 isExpanded ? 'fullscreen_exit' : 'fullscreen';
 
-            // Save the current dimensions before expanding
             if (isExpanded) {
                 chatInterface.dataset.prevWidth = chatInterface.style.width;
                 chatInterface.dataset.prevHeight = chatInterface.style.height;
             } else {
-                // Restore previous dimensions
                 chatInterface.style.width = chatInterface.dataset.prevWidth || '400px';
                 chatInterface.style.height = chatInterface.dataset.prevHeight || '600px';
             }
         });
 
-        // Add resize functionality
         let isResizing = false;
         let originalWidth;
         let originalHeight;
@@ -3861,7 +3728,6 @@
         let originalY;
 
         chatInterface.addEventListener('mousedown', (e) => {
-            // Check if clicking on the bottom-right corner (resize handle)
             const rect = chatInterface.getBoundingClientRect();
             const isClickOnResizeHandle =
                 e.clientX > rect.right - 20 &&
@@ -3881,11 +3747,9 @@
                 const width = originalWidth + (e.clientX - originalX);
                 const height = originalHeight + (e.clientY - originalY);
 
-                // Apply minimum dimensions
                 chatInterface.style.width = `${Math.max(400, width)}px`;
                 chatInterface.style.height = `${Math.max(600, height)}px`;
 
-                // Prevent text selection during resize
                 e.preventDefault();
             }
         });
@@ -3894,7 +3758,6 @@
             isResizing = false;
         });
 
-        // Update close chat function to reset expanded state
         function closeChatInterface() {
             isExpanded = false;
             chatInterface.classList.remove('expanded', 'visible');
@@ -3905,7 +3768,6 @@
             chatButton.style.display = 'flex';
         }
 
-        // ============ Citations Drawer Functionality ============
         const citationsButton = document.getElementById('citationsButton');
         const citationsDrawer = document.getElementById('citationsDrawer');
         const closeCitationsButton = document.getElementById('closeCitationsButton');
@@ -3960,7 +3822,6 @@
         citationsYearFilter.addEventListener('change', () => applyCitationsFilters());
         citationsFullTextOnly.addEventListener('change', () => applyCitationsFilters());
 
-        // Toggle citations drawer
         citationsButton.addEventListener('click', () => {
             citationsDrawer.classList.add('visible');
             if (currentConversationId) {
@@ -3972,7 +3833,6 @@
             citationsDrawer.classList.remove('visible');
         });
 
-        // Close drawer when clicking outside
         document.addEventListener('click', (e) => {
             if (citationsDrawer.classList.contains('visible') &&
                 !citationsDrawer.contains(e.target) &&
@@ -3981,7 +3841,6 @@
             }
         });
 
-        // Fetch citations from API
         async function loadCitations(uploadId) {
             citationsList.innerHTML = `
                 <div class="citations-loading">
@@ -4014,10 +3873,8 @@
             }
         }
 
-        // Render citations in the drawer
         function renderCitations(citations, totalCount) {
             renderedCitations = citations || [];
-            // Update count badge
             citationsCount.textContent = totalCount > 0 ? totalCount : '';
 
             if (!citations || citations.length === 0) {
@@ -4043,7 +3900,6 @@
                     ? `<a href="${citation.url}" target="_blank">${escapeHtml(titleDisplay)}</a>`
                     : escapeHtml(titleDisplay);
 
-                // Build identifier line (DOI or arXiv ID)
                 let identifierHtml = '';
                 if (citation.doi) {
                     identifierHtml = `<div class="citation-doi">DOI: <a href="https://doi.org/${escapeHtml(citation.doi)}" target="_blank">${escapeHtml(citation.doi)}</a></div>`;
@@ -4051,7 +3907,6 @@
                     identifierHtml = `<div class="citation-doi">arXiv: <a href="https://arxiv.org/abs/${escapeHtml(citation.arxiv_id)}" target="_blank">${escapeHtml(citation.arxiv_id)}</a></div>`;
                 }
 
-                // Year display
                 const yearHtml = citation.year ? `<span class="citation-year">(${citation.year})</span>` : '';
 
                 return `
@@ -4079,7 +3934,6 @@
             }).join('');
         }
 
-        // Toggle abstract expansion
         function toggleAbstract(index) {
             const abstract = document.getElementById(`abstract-${index}`);
             const button = abstract.nextElementSibling;
@@ -4092,7 +3946,6 @@
             }
         }
 
-        // Helper function to escape HTML
         function escapeHtml(text) {
             if (!text) return '';
             const div = document.createElement('div');
@@ -4104,7 +3957,6 @@
             const citation = renderedCitations[index];
             if (!citation) return;
 
-            // Open chat if not already open
             if (!chatInterface.classList.contains('visible')) {
                 chatButton.click();
             }
@@ -4194,13 +4046,10 @@
             }
         }
 
-        // Update loadConversation to show/hide citations button
         const originalLoadConversation = loadConversation;
         loadConversation = function (id) {
             originalLoadConversation(id);
-            // Show citations button and update count
             document.getElementById('citationsButton').classList.remove('no-paper');
-            // Pre-fetch citations count
             fetch(`/citations/${id}`)
                 .then(r => r.json())
                 .then(data => {
@@ -4211,7 +4060,6 @@
                 .catch(() => { });
         };
 
-        // Update deleteConversation to hide citations
         const originalDeleteConversation = deleteConversation;
         deleteConversation = function (id) {
             originalDeleteConversation(id);
