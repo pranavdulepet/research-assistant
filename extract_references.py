@@ -9,13 +9,6 @@ def extract_references_from_pdf(pdf_path):
     # { '10.1145/3442188': 'Proceedings of the 2021 ACM Conference on Fairness, Accountability, and Transparency', ... }
     return references
 
-# Example usage:
-pdf_path = "path/to/your/paper.pdf"
-refs = extract_references_from_pdf(pdf_path)
-print("Extracted references:")
-for doi, citation in refs.items():
-    print(f"{doi} | {citation}")
-
 def store_cited_paper(metadata, full_text, upload_id, db_path="cited_papers.db"):
     """Store cited paper metadata and full text into the local SQLite database with its associated upload_id."""
     doi = metadata.get("DOI")

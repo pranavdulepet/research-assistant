@@ -1272,6 +1272,253 @@
             background: transparent;
             color: #e0dbdb;
         }
+
+        /* Citations Button */
+        #citationsButton {
+            position: fixed;
+            bottom: 20px;
+            left: 270px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background-color: #1a365d;
+            color: #ffffff;
+            border-radius: 8px;
+            padding: 0 24px;
+            font-weight: bold;
+            box-shadow: 0 4px 12px rgba(26, 54, 93, 0.3);
+            z-index: 1000;
+            white-space: nowrap;
+            font-size: 14px;
+            height: 40px;
+            line-height: 40px;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+
+        #citationsButton.no-paper {
+            display: none !important;
+        }
+
+        #citationsButton .material-icons {
+            font-size: 20px;
+        }
+
+        .citations-count {
+            background: #47a8e8;
+            color: white;
+            border-radius: 12px;
+            padding: 2px 8px;
+            font-size: 12px;
+            margin-left: 4px;
+        }
+
+        .citations-count:empty {
+            display: none;
+        }
+
+        /* Citations Drawer */
+        .citations-drawer {
+            position: fixed;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 380px;
+            background: white;
+            box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15);
+            z-index: 1200;
+            display: flex;
+            flex-direction: column;
+            transform: translateX(-100%);
+            transition: transform 0.3s ease;
+        }
+
+        .citations-drawer.visible {
+            transform: translateX(0);
+        }
+
+        .citations-header {
+            padding: 16px 20px;
+            background: #1a365d;
+            color: white;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .citations-header h3 {
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 18px;
+        }
+
+        .citations-header h3 .material-icons {
+            font-size: 24px;
+        }
+
+        #closeCitationsButton {
+            background: transparent;
+            color: white;
+            border: none;
+            padding: 4px;
+            box-shadow: none;
+            cursor: pointer;
+        }
+
+        #closeCitationsButton:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .citations-status {
+            padding: 12px 20px;
+            background: #f7f7f8;
+            font-size: 13px;
+            color: #666;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .citations-status:empty {
+            display: none;
+        }
+
+        .citations-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+
+        /* Citation Card */
+        .citation-card {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+            border-left: 4px solid #47a8e8;
+            transition: box-shadow 0.2s ease;
+        }
+
+        .citation-card:hover {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .citation-card.has-fulltext {
+            border-left-color: #28a745;
+        }
+
+        .citation-title {
+            font-weight: 600;
+            font-size: 14px;
+            color: #1a365d;
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+
+        .citation-title a {
+            color: #1a365d;
+            text-decoration: none;
+        }
+
+        .citation-title a:hover {
+            text-decoration: underline;
+        }
+
+        .citation-authors {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 8px;
+        }
+
+        .citation-doi {
+            font-size: 11px;
+            color: #888;
+            font-family: monospace;
+            margin-bottom: 8px;
+            word-break: break-all;
+        }
+
+        .citation-abstract {
+            font-size: 12px;
+            color: #555;
+            line-height: 1.5;
+            margin-bottom: 8px;
+        }
+
+        .citation-abstract.truncated {
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .citation-abstract-toggle {
+            font-size: 11px;
+            color: #47a8e8;
+            cursor: pointer;
+            border: none;
+            background: none;
+            padding: 0;
+            box-shadow: none;
+        }
+
+        .citation-abstract-toggle:hover {
+            text-decoration: underline;
+            background: none;
+        }
+
+        .citation-badge {
+            display: inline-block;
+            font-size: 10px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: #28a745;
+            color: white;
+            margin-top: 8px;
+        }
+
+        .citation-year {
+            font-size: 12px;
+            color: #888;
+            font-weight: normal;
+        }
+
+        .citation-doi a {
+            color: #47a8e8;
+            text-decoration: none;
+        }
+
+        .citation-doi a:hover {
+            text-decoration: underline;
+        }
+
+        .citations-empty {
+            text-align: center;
+            padding: 40px 20px;
+            color: #888;
+        }
+
+        .citations-empty .material-icons {
+            font-size: 48px;
+            opacity: 0.5;
+            margin-bottom: 12px;
+        }
+
+        .citations-loading {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+
+        .citations-loading .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #47a8e8;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
     </style>
     <!-- Include PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
@@ -1407,6 +1654,28 @@
                 onInput="this.style.height = 'auto'; this.style.height = (this.scrollHeight) + 'px';"></textarea>
             <button id="sendChatButton">Send</button>
         </div>
+    </div>
+
+    <!-- Citations Button -->
+    <button id="citationsButton" class="no-paper">
+        <i class="material-icons">library_books</i>
+        References
+        <span id="citationsCount" class="citations-count"></span>
+    </button>
+
+    <!-- Citations Drawer -->
+    <div id="citationsDrawer" class="citations-drawer">
+        <div class="citations-header">
+            <h3>
+                <i class="material-icons">library_books</i>
+                References
+            </h3>
+            <button id="closeCitationsButton">
+                <i class="material-icons">close</i>
+            </button>
+        </div>
+        <div id="citationsStatus" class="citations-status"></div>
+        <div id="citationsList" class="citations-list"></div>
     </div>
 
     <div class="disclaimer">
@@ -1886,6 +2155,7 @@
                 document.getElementById('sidebar').classList.remove('no-paper');
                 document.getElementById('right-panel').classList.remove('no-paper');
                 document.getElementById('chatButton').classList.remove('no-paper');
+                document.getElementById('citationsButton').classList.remove('no-paper');
                 document.getElementById('content').classList.remove('no-paper');
                 document.getElementById('main').classList.remove('no-paper');
                 document.getElementById('zoomControls').classList.remove('no-paper');
@@ -1923,10 +2193,15 @@
                     document.getElementById('sidebar').classList.add('no-paper');
                     document.getElementById('right-panel').classList.add('no-paper');
                     document.getElementById('chatButton').classList.add('no-paper');
+                    document.getElementById('citationsButton').classList.add('no-paper');
                     document.getElementById('content').classList.add('no-paper');
                     document.getElementById('main').classList.add('no-paper');
                     document.getElementById('zoomControls').classList.add('no-paper');
                     document.getElementById('zoomControls').style.display = 'none';
+
+                    // Close citations drawer
+                    document.getElementById('citationsDrawer').classList.remove('visible');
+                    document.getElementById('citationsCount').textContent = '';
 
                     document.getElementById('chatButton').classList.add('disabled');
                 }
@@ -2061,6 +2336,7 @@
                 document.getElementById('sidebar').classList.add('no-paper');
                 document.getElementById('right-panel').classList.add('no-paper');
                 document.getElementById('chatButton').classList.add('no-paper');
+                document.getElementById('citationsButton').classList.add('no-paper');
                 document.getElementById('content').classList.add('no-paper');
                 document.getElementById('main').classList.add('no-paper');
                 document.getElementById('zoomControls').classList.add('no-paper');
@@ -2720,6 +2996,168 @@
             }, 300);
             chatButton.style.display = 'block';
         }
+
+        // ============ Citations Drawer Functionality ============
+        const citationsButton = document.getElementById('citationsButton');
+        const citationsDrawer = document.getElementById('citationsDrawer');
+        const closeCitationsButton = document.getElementById('closeCitationsButton');
+        const citationsList = document.getElementById('citationsList');
+        const citationsStatus = document.getElementById('citationsStatus');
+        const citationsCount = document.getElementById('citationsCount');
+
+        // Toggle citations drawer
+        citationsButton.addEventListener('click', () => {
+            citationsDrawer.classList.add('visible');
+            if (currentConversationId) {
+                loadCitations(currentConversationId);
+            }
+        });
+
+        closeCitationsButton.addEventListener('click', () => {
+            citationsDrawer.classList.remove('visible');
+        });
+
+        // Close drawer when clicking outside
+        document.addEventListener('click', (e) => {
+            if (citationsDrawer.classList.contains('visible') &&
+                !citationsDrawer.contains(e.target) &&
+                !citationsButton.contains(e.target)) {
+                citationsDrawer.classList.remove('visible');
+            }
+        });
+
+        // Fetch citations from API
+        async function loadCitations(uploadId) {
+            citationsList.innerHTML = `
+                <div class="citations-loading">
+                    <div class="spinner"></div>
+                    <p>Loading references...</p>
+                </div>
+            `;
+            citationsStatus.textContent = '';
+
+            try {
+                const response = await fetch(`/citations/${uploadId}`);
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                renderCitations(data.citations, data.count);
+            } catch (error) {
+                console.error('Error loading citations:', error);
+                citationsList.innerHTML = `
+                    <div class="citations-empty">
+                        <i class="material-icons">error_outline</i>
+                        <p>Failed to load references</p>
+                        <p style="font-size: 12px;">${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        // Render citations in the drawer
+        function renderCitations(citations, count) {
+            // Update count badge
+            citationsCount.textContent = count > 0 ? count : '';
+
+            if (!citations || citations.length === 0) {
+                citationsList.innerHTML = `
+                    <div class="citations-empty">
+                        <i class="material-icons">library_books</i>
+                        <p>No references found</p>
+                        <p style="font-size: 12px;">References will appear here once extracted from the paper.</p>
+                    </div>
+                `;
+                citationsStatus.textContent = 'No references extracted yet.';
+                return;
+            }
+
+            const withFullText = citations.filter(c => c.hasFullText).length;
+            citationsStatus.textContent = `${count} references found. ${withFullText} with accessible full text.`;
+
+            citationsList.innerHTML = citations.map((citation, index) => {
+                const hasTitle = citation.title && citation.title !== citation.doi && citation.title !== citation.arxiv_id;
+                const titleDisplay = hasTitle ? citation.title : `Reference ${index + 1}`;
+                const titleHtml = citation.url
+                    ? `<a href="${citation.url}" target="_blank">${escapeHtml(titleDisplay)}</a>`
+                    : escapeHtml(titleDisplay);
+
+                // Build identifier line (DOI or arXiv ID)
+                let identifierHtml = '';
+                if (citation.doi) {
+                    identifierHtml = `<div class="citation-doi">DOI: <a href="https://doi.org/${escapeHtml(citation.doi)}" target="_blank">${escapeHtml(citation.doi)}</a></div>`;
+                } else if (citation.arxiv_id) {
+                    identifierHtml = `<div class="citation-doi">arXiv: <a href="https://arxiv.org/abs/${escapeHtml(citation.arxiv_id)}" target="_blank">${escapeHtml(citation.arxiv_id)}</a></div>`;
+                }
+
+                // Year display
+                const yearHtml = citation.year ? `<span class="citation-year">(${citation.year})</span>` : '';
+
+                return `
+                    <div class="citation-card ${citation.hasFullText ? 'has-fulltext' : ''}">
+                        <div class="citation-title">${titleHtml} ${yearHtml}</div>
+                        ${citation.authors ? `<div class="citation-authors">${escapeHtml(citation.authors)}</div>` : ''}
+                        ${identifierHtml}
+                        ${citation.abstract ? `
+                            <div class="citation-abstract truncated" id="abstract-${index}">${escapeHtml(citation.abstract)}</div>
+                            <button class="citation-abstract-toggle" onclick="toggleAbstract(${index})">Show more</button>
+                        ` : ''}
+                        ${citation.hasFullText ? '<span class="citation-badge">Full text available</span>' : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Toggle abstract expansion
+        function toggleAbstract(index) {
+            const abstract = document.getElementById(`abstract-${index}`);
+            const button = abstract.nextElementSibling;
+            if (abstract.classList.contains('truncated')) {
+                abstract.classList.remove('truncated');
+                button.textContent = 'Show less';
+            } else {
+                abstract.classList.add('truncated');
+                button.textContent = 'Show more';
+            }
+        }
+
+        // Helper function to escape HTML
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Update loadConversation to show/hide citations button
+        const originalLoadConversation = loadConversation;
+        loadConversation = function (id) {
+            originalLoadConversation(id);
+            // Show citations button and update count
+            document.getElementById('citationsButton').classList.remove('no-paper');
+            // Pre-fetch citations count
+            fetch(`/citations/${id}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.count !== undefined) {
+                        citationsCount.textContent = data.count > 0 ? data.count : '';
+                    }
+                })
+                .catch(() => { });
+        };
+
+        // Update deleteConversation to hide citations
+        const originalDeleteConversation = deleteConversation;
+        deleteConversation = function (id) {
+            originalDeleteConversation(id);
+            if (!currentConversationId) {
+                document.getElementById('citationsButton').classList.add('no-paper');
+                citationsDrawer.classList.remove('visible');
+                citationsCount.textContent = '';
+            }
+        };
     </script>
 </body>
 

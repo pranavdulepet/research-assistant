@@ -17,8 +17,4 @@ numpy>=1.24.0
 habanero 
 semanticscholar
 httpx
-beautifulsoup4
 pdfx
-celery 
-redis
-

@@ -21,10 +21,10 @@ from bs4 import BeautifulSoup
 import threading
 from queue import Queue
 import time
-from combined_extraction import extract_references_from_pdf, get_open_access_pdf_url
+from combined_extraction import extract_references_from_pdf, get_open_access_pdf_url, fetch_paper_metadata
 import numpy as np
 from typing import List, Dict
-import torch
+import asyncio
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -106,63 +106,13 @@ def save_conversations(conversations):
 def index():
     return render_template('index.html')
 
-def advanced_extract_and_store_references(pdf_path, upload_id, citations_path, email="your-email@example.com"):
-    """
-    Use pdfx (from extract_references.py) to extract all references from the PDF.
-    Then for each extracted DOI use the Unpaywall API (via get_open_access_pdf_url)
-    to get an open access full-text URL, fetch the full text from the URL (if available),
-    and store the record in the local SQLite database.
-    """
-    references = extract_references_from_pdf(pdf_path)
-    
-    # references might be a dictionary (DOI -> citation) or a set of DOIs.
-    if isinstance(references, dict):
-        ref_items = references.items()
-    else:
-        ref_items = ((doi, "") for doi in references)
-
-    num_refs = len(references) if references else 0
-    logging.info("Extracted %d references using pdfx", num_refs)
-    citations = []
-    
-    for doi, citation_text in ref_items:
-        # Ensure both DOI and citation_text are plain strings.
-        doi_str = str(doi)
-        citation_text_str = str(citation_text) if citation_text else doi_str
-        
-        logging.info("Processing reference DOI: %s", doi_str)
-        # Get full text URL from Unpaywall API
-        oa_pdf_url = get_open_access_pdf_url(doi_str, email)
-        if oa_pdf_url:
-            logging.info("Found full text URL for DOI %s: %s", doi_str, oa_pdf_url)
-            full_text = fetch_full_text(oa_pdf_url)
-        else:
-            logging.warning("No full text URL found via Unpaywall for DOI %s", doi_str)
-            full_text = None
-        
-        # Build minimal metadata record using the extracted citation text.
-        metadata = {
-            "DOI": doi_str,
-            "title": [citation_text_str],
-            "publisher": "",
-            "author": [],
-            "abstract": "",
-            "link": [{"URL": oa_pdf_url}] if oa_pdf_url else [],
-            "URL": oa_pdf_url if oa_pdf_url else ""
-        }
-        store_cited_paper(metadata, full_text, upload_id)
-        citations.append(metadata)
-    
-    # Save citations as a JSON file within the upload's citations folder.
-    citations_file = citations_path / "citations.json"
-    with open(citations_file, "w") as f:
-        json.dump(citations, f, indent=2)
-    logging.info("Citations data stored at %s", citations_file)
-    return citations
-
 # Add these global variables at the top level
 background_tasks = {}
+background_tasks_lock = threading.Lock()
 progress_updates = Queue()
+
+# Email for Unpaywall API (configure via environment variable)
+UNPAYWALL_EMAIL = os.getenv("UNPAYWALL_EMAIL", "your-email@example.com")
 
 # Add this new class to manage background tasks
 class BackgroundTask:
@@ -198,9 +148,10 @@ def upload_pdf():
     extraction_data = extract_text_and_figures(str(pdf_path), upload_id, paths['figures_path'])
     logging.info("Completed text and figure extraction")
     
-    # Initialize background task
+    # Initialize background task (thread-safe)
     task = BackgroundTask(upload_id)
-    background_tasks[upload_id] = task
+    with background_tasks_lock:
+        background_tasks[upload_id] = task
     
     # Start background processing
     thread = threading.Thread(
@@ -379,6 +330,18 @@ def delete_upload(upload_id):
             # Delete corresponding cited papers from the database
             delete_cited_papers(upload_id)
             
+            # Clean up document store for this upload
+            with document_stores_lock:
+                if upload_id in document_stores:
+                    del document_stores[upload_id]
+                    logging.info("Cleaned up document store for upload_id: %s", upload_id)
+            
+            # Clean up background task for this upload
+            with background_tasks_lock:
+                if upload_id in background_tasks:
+                    del background_tasks[upload_id]
+                    logging.info("Cleaned up background task for upload_id: %s", upload_id)
+            
             # Update conversations.json accordingly
             conversations = load_conversations()
             conversations = [c for c in conversations if c['id'] != upload_id]
@@ -413,8 +376,6 @@ def verify_annotation():
     
     # Perform web search for relevant information
     try:
-        # Use asyncio.run() to handle the async call in sync context
-        import asyncio
         web_results = asyncio.run(perform_web_search(f"{comment} {annotation_text}"))
         web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
     except Exception as e:
@@ -477,8 +438,6 @@ def verify_annotation():
     print("\n=== SENDING REQUEST TO GEMINI ===")
     try:
         print("Waiting for Gemini response...")
-        # Use asyncio.run() to handle the async call in sync context
-        import asyncio
         response = asyncio.run(get_ai_response(provider, prompt))
         print("Response received from Gemini!")
         print("\n=== AI RESPONSE ===")
@@ -542,6 +501,7 @@ class DocumentStore:
 
 # Add this to store document embeddings
 document_stores = {}
+document_stores_lock = threading.Lock()
 
 # Update the answer_question function
 @app.route("/answer-question", methods=["POST"])
@@ -565,14 +525,15 @@ def answer_question():
         selected_text = data.get("selectedText", "")
         figures = data.get("figures", [])
         
-        # Initialize or get document store for this upload
-        if upload_id not in document_stores:
-            doc_store = DocumentStore()
-            doc_store.add_document(context)
-            document_stores[upload_id] = doc_store
-        
-        # Get most relevant chunks for the question
-        relevant_chunks = document_stores[upload_id].search(question, k=3)
+        # Initialize or get document store for this upload (thread-safe)
+        with document_stores_lock:
+            if upload_id not in document_stores:
+                doc_store = DocumentStore()
+                doc_store.add_document(context)
+                document_stores[upload_id] = doc_store
+            
+            # Get most relevant chunks for the question
+            relevant_chunks = document_stores[upload_id].search(question, k=3)
         context_text = "\n\n".join(relevant_chunks)
         
         # Build context with figures
@@ -633,7 +594,6 @@ def answer_question():
         """
         
         try:
-            import asyncio
             response = asyncio.run(get_ai_response(provider, prompt))
             return jsonify({"answer": response})
         except Exception as e:
@@ -665,7 +625,6 @@ def chat_with_paper():
     
     # Perform web search
     try:
-        import asyncio
         web_results = asyncio.run(perform_web_search(message))
         web_context = "\n\nRelevant information from web search:\n" + web_results if web_results else ""
     except Exception as e:
@@ -830,6 +789,7 @@ async def get_ai_response(provider, prompt, temperature=0.7):
     
     try:
         # Extract the actual content to search for
+        search_query = ""
         if "verify" in prompt.lower():
             # Extract both the comment and selected text from the prompt
             comment_match = re.search(r'User\'s Comment/Claim: "(.*?)"', prompt)
@@ -864,7 +824,7 @@ async def get_ai_response(provider, prompt, temperature=0.7):
                 logging.error("Gemini error details: %s", str(e))
                 raise Exception(f"Gemini error: {str(e)}")
             
-        elif provider == 'openai' and AI_PROVIDERS['openai']['disabled']:
+        elif provider == 'openai' and AI_PROVIDERS['openai']['enabled']:
             try:
                 logging.info("Generating OpenAI response...")
                 response = await openai_client.chat.completions.create(
@@ -893,19 +853,25 @@ async def get_ai_response(provider, prompt, temperature=0.7):
 
 def store_cited_paper(metadata, full_text, upload_id, db_path="cited_papers.db"):
     """Store cited paper metadata and full text into the local SQLite database with its associated upload_id."""
-    doi = metadata.get("DOI", "")
+    doi = metadata.get("DOI", "") or ""
+    arxiv_id = metadata.get("arxiv_id", "") or ""
     title_list = metadata.get("title", [])
     title = title_list[0] if title_list else ""
-    publisher = metadata.get("publisher", "")
+    publisher = metadata.get("publisher", "") or ""
+    year = metadata.get("year")
+    raw_text = metadata.get("raw_text", "") or ""
     authors_data = metadata.get("author", [])
-    if isinstance(authors_data, list) and authors_data:
+    # Handle authors as either a string or list of dicts
+    if isinstance(authors_data, str):
+        authors = authors_data
+    elif isinstance(authors_data, list) and authors_data:
         authors = ", ".join([
             f"{a.get('given', '').strip()} {a.get('family', '').strip()}"
             for a in authors_data if isinstance(a, dict)
         ])
     else:
         authors = ""
-    abstract = metadata.get("abstract", "")
+    abstract = metadata.get("abstract", "") or ""
     # Determine the URL from "link" if available or fallback to "URL".
     url = ""
     links = metadata.get("link", [])
@@ -914,19 +880,36 @@ def store_cited_paper(metadata, full_text, upload_id, db_path="cited_papers.db")
         if isinstance(first_link, dict):
             url = first_link.get("URL", "")
     if not url:
-        url = metadata.get("URL", "")
+        url = metadata.get("URL", "") or ""
+    
+    # Need at least a title or some identifier to store
+    if not doi and not arxiv_id and not title and not raw_text:
+        logging.warning("Skipping paper without any identifier, title, or raw text")
+        return
+    
+    # Generate a unique key for deduplication
+    # Use DOI > arXiv ID > title hash > raw_text hash as the unique identifier
+    if doi:
+        unique_key = f"doi:{doi}"
+    elif arxiv_id:
+        unique_key = f"arxiv:{arxiv_id}"
+    elif title:
+        unique_key = f"title:{hash(title)}"
+    else:
+        unique_key = f"raw:{hash(raw_text[:200])}"
     
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     try:
         c.execute('''
-            INSERT OR REPLACE INTO cited_papers (doi, upload_id, title, publisher, authors, abstract, full_text, url)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (doi, upload_id, title, publisher, authors, abstract, full_text, url))
+            INSERT OR REPLACE INTO cited_papers (unique_key, doi, arxiv_id, upload_id, title, publisher, authors, abstract, year, full_text, url, raw_text)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (unique_key, doi, arxiv_id, upload_id, title, publisher, authors, abstract, year, full_text, url, raw_text))
         conn.commit()
-        logging.info("Stored cited paper with DOI: %s for upload_id: %s", doi, upload_id)
+        identifier = doi or arxiv_id or (title[:40] if title else raw_text[:40])
+        logging.info("Stored cited paper: %s for upload_id: %s", identifier, upload_id)
     except Exception as e:
-        logging.error("Error inserting into DB for DOI %s and upload_id %s: %s", doi, upload_id, str(e))
+        logging.error("Error inserting into DB: %s", str(e))
     finally:
         conn.close()
 
@@ -961,20 +944,40 @@ def init_cited_papers_db(db_path="cited_papers.db"):
     """Initialize the SQLite database to store cited paper content."""
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
+    
+    # Create table with a unique_key column for proper deduplication
     c.execute('''
         CREATE TABLE IF NOT EXISTS cited_papers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            unique_key TEXT,
             doi TEXT,
+            arxiv_id TEXT,
             upload_id TEXT,
             title TEXT,
             publisher TEXT,
             authors TEXT,
             abstract TEXT,
+            year INTEGER,
             full_text TEXT,
             url TEXT,
-            UNIQUE(doi, upload_id)
+            raw_text TEXT,
+            UNIQUE(unique_key, upload_id)
         )
     ''')
+    
+    # Add columns if they don't exist (for existing databases)
+    for column, coltype in [('arxiv_id', 'TEXT'), ('year', 'INTEGER'), ('raw_text', 'TEXT'), ('unique_key', 'TEXT')]:
+        try:
+            c.execute(f'ALTER TABLE cited_papers ADD COLUMN {column} {coltype}')
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+    
+    # Create index for faster lookups
+    try:
+        c.execute('CREATE INDEX IF NOT EXISTS idx_upload_id ON cited_papers(upload_id)')
+    except sqlite3.OperationalError:
+        pass
+    
     conn.commit()
     conn.close()
     logging.info("Initialized cited papers database at %s", db_path)
@@ -996,45 +999,83 @@ def process_references_background(pdf_path, upload_id, citations_path, task):
     try:
         # Update initial progress
         task.progress = 10
-        task.status = "Extracting references..."
+        task.status = "Extracting references from PDF..."
         
-        # Extract references
+        # Extract references (returns list of dicts with type, id, query)
         references = extract_references_from_pdf(pdf_path)
         task.progress = 30
-        
-        if isinstance(references, dict):
-            ref_items = references.items()
-        else:
-            ref_items = ((doi, "") for doi in references)
         
         total_refs = len(references) if references else 0
         processed_refs = 0
         citations = []
         
-        for doi, citation_text in ref_items:
-            doi_str = str(doi)
-            citation_text_str = str(citation_text) if citation_text else doi_str
-            
+        logging.info("Found %d references to process", total_refs)
+        
+        for ref_info in references:
             # Update progress based on processed references
             processed_refs += 1
-            task.progress = 30 + int((processed_refs / total_refs) * 60)
-            task.status = f"Processing reference {processed_refs} of {total_refs}"
-            
-            # Process reference
-            oa_pdf_url = get_open_access_pdf_url(doi_str, "your-email@example.com")
-            if oa_pdf_url:
-                full_text = fetch_full_text(oa_pdf_url)
+            if total_refs > 0:
+                task.progress = 30 + int((processed_refs / total_refs) * 60)
             else:
-                full_text = None
+                task.progress = 90
             
+            ref_type = ref_info.get('type', 'unknown')
+            ref_id = ref_info.get('id', '')
+            raw_text = ref_info.get('raw_text', '')
+            task.status = f"Processing reference {processed_refs}/{total_refs}: {ref_type}"
+            
+            try:
+                # Fetch paper metadata using Semantic Scholar, OpenAlex, or Crossref
+                paper_metadata = fetch_paper_metadata(ref_info, UNPAYWALL_EMAIL)
+            except Exception as e:
+                logging.warning("API error for reference %s: %s", ref_id[:30], str(e))
+                paper_metadata = None
+            
+            # Even if lookup fails, store what we have from extraction
+            if not paper_metadata:
+                logging.info("Using extracted data for reference: %s", ref_id[:50])
+                paper_metadata = {
+                    'title': ref_info.get('title') or ref_info.get('query', ref_id)[:200],
+                    'authors': ref_info.get('authors', ''),
+                    'abstract': '',
+                    'year': ref_info.get('year'),
+                    'doi': ref_id if ref_type == 'doi' else None,
+                    'arxiv_id': ref_id if ref_type == 'arxiv' else None,
+                    'url': '',
+                    'source': 'extracted'
+                }
+            
+            # Get DOI for Unpaywall lookup
+            doi = paper_metadata.get('doi') or (ref_id if ref_type == 'doi' else None)
+            
+            # Try to get full text URL
+            oa_pdf_url = None
+            full_text = None
+            
+            # Check for arXiv URL first (most reliable for CS papers)
+            arxiv_id = paper_metadata.get('arxiv_id') or (ref_id if ref_type == 'arxiv' else None)
+            if arxiv_id:
+                oa_pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+            
+            # Try Unpaywall for DOI-based papers
+            if not oa_pdf_url and doi:
+                try:
+                    oa_pdf_url = get_open_access_pdf_url(doi, UNPAYWALL_EMAIL)
+                except Exception as e:
+                    logging.debug("Unpaywall lookup failed for %s: %s", doi, str(e))
+            
+            # Build metadata record - ALWAYS store the reference
             metadata = {
-                "DOI": doi_str,
-                "title": [citation_text_str],
-                "publisher": "",
-                "author": [],
-                "abstract": "",
+                "DOI": doi or "",
+                "arxiv_id": arxiv_id or "",
+                "title": [paper_metadata.get("title", ref_id)],
+                "publisher": paper_metadata.get("publisher", ""),
+                "author": paper_metadata.get("authors", ""),
+                "abstract": paper_metadata.get("abstract", ""),
+                "year": paper_metadata.get("year"),
                 "link": [{"URL": oa_pdf_url}] if oa_pdf_url else [],
-                "URL": oa_pdf_url if oa_pdf_url else ""
+                "URL": oa_pdf_url or paper_metadata.get("url", ""),
+                "raw_text": raw_text[:500] if raw_text else ""  # Store raw text as fallback
             }
             store_cited_paper(metadata, full_text, upload_id)
             citations.append(metadata)
@@ -1046,8 +1087,9 @@ def process_references_background(pdf_path, upload_id, citations_path, task):
         
         # Update task completion
         task.progress = 100
-        task.status = "Complete"
+        task.status = f"Complete - {len(citations)} references processed"
         task.result = citations
+        logging.info("Reference processing complete: %d citations stored", len(citations))
         
     except Exception as e:
         logging.error("Error in background processing: %s", str(e))
@@ -1057,17 +1099,71 @@ def process_references_background(pdf_path, upload_id, citations_path, task):
 
 @app.route('/task-progress/<task_id>')
 def task_progress(task_id):
-    task = background_tasks.get(task_id)
+    with background_tasks_lock:
+        task = background_tasks.get(task_id)
+    
     if not task:
         return jsonify({"error": "Task not found"}), 404
     
-    return jsonify({
+    response = {
         "progress": task.progress,
         "status": task.status,
         "complete": task.progress == 100,
         "error": task.error,
         "result": task.result
-    })
+    }
+    
+    # Clean up completed tasks after client has retrieved the result
+    if task.progress == 100:
+        with background_tasks_lock:
+            if task_id in background_tasks:
+                del background_tasks[task_id]
+                logging.info("Cleaned up completed background task: %s", task_id)
+    
+    return jsonify(response)
+
+@app.route('/citations/<upload_id>', methods=['GET'])
+def get_citations(upload_id):
+    """Get all citations/references for a given upload."""
+    try:
+        with sqlite3.connect("cited_papers.db") as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT doi, arxiv_id, title, authors, abstract, year, url, raw_text
+                FROM cited_papers
+                WHERE upload_id = ?
+                ORDER BY year DESC, title
+            """, (upload_id,))
+            
+            papers = cursor.fetchall()
+            
+            citations = []
+            for doi, arxiv_id, title, authors, abstract, year, url, raw_text in papers:
+                # Create identifier for display
+                identifier = doi or (f"arXiv:{arxiv_id}" if arxiv_id else None)
+                
+                # Use raw_text as fallback for title if no proper title
+                display_title = title
+                if not title or title == doi or title == arxiv_id:
+                    display_title = raw_text[:200] if raw_text else None
+                
+                citations.append({
+                    "doi": doi,
+                    "arxiv_id": arxiv_id,
+                    "identifier": identifier,
+                    "title": display_title,
+                    "authors": authors,
+                    "abstract": abstract,
+                    "year": year,
+                    "url": url,
+                    "raw_text": raw_text,
+                    "hasFullText": bool(url)
+                })
+            
+            return jsonify({"citations": citations, "count": len(citations)})
+    except Exception as e:
+        logging.error("Error fetching citations for upload_id %s: %s", upload_id, str(e))
+        return jsonify({"error": str(e)}), 500
 
 def get_referenced_papers_context(conversation_id):
     """Fetch context from referenced papers for a given conversation."""
@@ -1078,24 +1174,38 @@ def get_referenced_papers_context(conversation_id):
             
             # Query to get referenced papers for the conversation
             cursor.execute("""
-                SELECT title, authors, abstract, full_text
+                SELECT doi, arxiv_id, title, authors, abstract, year, full_text, url
                 FROM cited_papers
                 WHERE upload_id = ?
             """, (conversation_id,))
             
             papers = cursor.fetchall()
             
+            if not papers:
+                return ""
+            
             # Format the context
-            context = ""
-            for title, authors, abstract, full_text in papers:
+            context = f"\n=== {len(papers)} Referenced Papers ===\n"
+            for doi, arxiv_id, title, authors, abstract, year, full_text, url in papers:
+                context += f"\n--- Referenced Paper ---"
+                if doi:
+                    context += f"\nDOI: {doi}"
+                if arxiv_id:
+                    context += f"\narXiv: {arxiv_id}"
+                if title and title != doi and title != arxiv_id:
+                    context += f"\nTitle: {title}"
+                if authors:
+                    context += f"\nAuthors: {authors}"
+                if year:
+                    context += f"\nYear: {year}"
+                if abstract:
+                    context += f"\nAbstract: {abstract}"
                 if full_text:
                     excerpt = full_text[:500] + "..." if len(full_text) > 500 else full_text
-                    context += f"\nReferenced Paper: {title}"
-                    if authors:
-                        context += f"\nAuthors: {authors}"
-                    if abstract:
-                        context += f"\nAbstract: {abstract}"
-                    context += f"\nExcerpt: {excerpt}\n"
+                    context += f"\nContent Excerpt: {excerpt}"
+                if url:
+                    context += f"\nURL: {url}"
+                context += "\n"
             
             return context
     except Exception as e:
@@ -1148,7 +1258,6 @@ def explain_math():
     """
     
     try:
-        import asyncio
         response = asyncio.run(get_ai_response(provider, prompt))
         return jsonify({"explanation": response})
     except Exception as e:
