@@ -99,32 +99,70 @@ logging.info("GEMINI_API_KEY present: %s", bool(os.getenv('GEMINI_API_KEY')))
 logging.info("OPENAI_API_KEY present: %s", bool(os.getenv('OPENAI_API_KEY')))
 
 # Configure AI Providers
+# "enabled" here means "supported by the app" (not "server has a key").
+# This app supports BYOK (Bring Your Own Key): users can provide their own key per request.
 AI_PROVIDERS = {
     'gemini': {
         'id': 'gemini',
         'name': 'Google Gemini',
-        'enabled': bool(os.getenv("GEMINI_API_KEY")),
-        'api_key': os.getenv("GEMINI_API_KEY")
+        'enabled': True,
+        'api_key': os.getenv("GEMINI_API_KEY")  # optional server key
     },
     'openai': {
         'id': 'openai',
-        'name': 'OpenAI GPT-4',
-        'enabled': False, #bool(os.getenv("OPENAI_API_KEY")),
-        'api_key': None #os.getenv("OPENAI_API_KEY")
+        'name': 'OpenAI',
+        'enabled': True,
+        'api_key': os.getenv("OPENAI_API_KEY")  # optional server key
     }
 }
 
-# Initialize AI clients
-if AI_PROVIDERS['gemini']['enabled']:
+# Initialize server-side clients only if a server API key is present.
+# For BYOK, we create a short-lived client per request (no key storage).
+gemini_client = None
+openai_client = None
+if AI_PROVIDERS.get('gemini', {}).get('api_key'):
     # Using new google-genai SDK
     gemini_client = genai.Client(api_key=AI_PROVIDERS['gemini']['api_key'])
-    print("Gemini client initialized successfully with new google-genai SDK")
+    print("Gemini client initialized successfully with server key (google-genai SDK)")
 
-if AI_PROVIDERS['openai']['enabled']:
-    openai_client = OpenAI(
-        api_key=AI_PROVIDERS['openai']['api_key']
+if AI_PROVIDERS.get('openai', {}).get('api_key'):
+    openai_client = OpenAI(api_key=AI_PROVIDERS['openai']['api_key'])
+    print("OpenAI client initialized successfully with server key.")
+
+def _extract_api_key(provider: str, data: dict | None = None) -> str | None:
+    """
+    Extract a user-provided API key from request JSON or headers.
+    Never store it server-side; only use for the duration of a single request.
+    """
+    key = None
+    if isinstance(data, dict):
+        key = (
+            data.get("apiKey")
+            or data.get("api_key")
+            or data.get(f"{provider}_api_key")
+            or data.get(f"{provider}ApiKey")
+        )
+    # Provider-specific header names (nice for non-browser clients)
+    hdr = (
+        request.headers.get("X-AI-API-Key")
+        or request.headers.get("X-Api-Key")
+        or request.headers.get(f"X-{provider.upper()}-API-Key")
+        or request.headers.get(f"X-{provider}-api-key")
     )
-    print("OpenAI client initialized successfully, without proxy.")
+    key = (hdr or key or "")
+    key = key.strip()
+    return key or None
+
+def _effective_api_key(provider: str, data: dict | None = None) -> str | None:
+    """User key wins; otherwise fall back to server env key if configured."""
+    return _extract_api_key(provider, data) or AI_PROVIDERS.get(provider, {}).get("api_key")
+
+def _ensure_provider_has_key(provider: str, data: dict | None = None):
+    if not _effective_api_key(provider, data):
+        raise ValueError(
+            f"No API key provided for {AI_PROVIDERS.get(provider, {}).get('name', provider)}. "
+            f"Paste your key in the UI (BYOK), or configure a server key via environment variables."
+        )
 
 def load_conversations():
     if os.path.exists(CONVERSATIONS_FILE):
@@ -501,7 +539,7 @@ def delete_upload(upload_id):
 
 @app.route("/verify-annotation", methods=["POST"])
 def verify_annotation():
-    data = request.get_json()
+    data = request.get_json() or {}
     provider = data.get("provider")
     upload_id = data.get("uploadId")
     
@@ -510,9 +548,11 @@ def verify_annotation():
     
     if not provider or provider not in AI_PROVIDERS:
         return jsonify({"error": "Invalid AI provider"}), 400
-    
-    if not AI_PROVIDERS[provider]['enabled']:
-        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+
+    try:
+        _ensure_provider_has_key(provider, data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
     
     annotation_text = data.get("selectedText", "")
     comment = data.get("comment", "")
@@ -585,7 +625,8 @@ def verify_annotation():
     print("\n=== SENDING REQUEST TO GEMINI ===")
     try:
         print("Waiting for Gemini response...")
-        response = run_async(get_ai_response(provider, prompt))
+        api_key = _effective_api_key(provider, data)
+        response = run_async(get_ai_response(provider, prompt, api_key=api_key))
         print("Response received from Gemini!")
         print("\n=== AI RESPONSE ===")
         print(response)
@@ -680,7 +721,7 @@ def _text_digest(text: str, max_chars: int = 200_000) -> str:
 @app.route("/answer-question", methods=["POST"])
 def answer_question():
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         upload_id = data.get("uploadId")
         
         if not upload_id:
@@ -689,9 +730,10 @@ def answer_question():
         provider = data.get("provider")
         if not provider or provider not in AI_PROVIDERS:
             return jsonify({"error": "Invalid AI provider"}), 400
-        
-        if not AI_PROVIDERS[provider]['enabled']:
-            return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+        try:
+            _ensure_provider_has_key(provider, data)
+        except Exception as e:
+            return jsonify({"error": str(e)}), 400
         
         question = data.get("question", "")
         context = data.get("context", "")
@@ -767,7 +809,8 @@ def answer_question():
         """
         
         try:
-            response = run_async(get_ai_response(provider, prompt))
+            api_key = _effective_api_key(provider, data)
+            response = run_async(get_ai_response(provider, prompt, api_key=api_key))
             return jsonify({"answer": response})
         except Exception as e:
             print(f"Error getting AI response: {str(e)}")
@@ -779,13 +822,19 @@ def answer_question():
     
 @app.route("/chat-with-paper", methods=["POST"])
 def chat_with_paper():
-    data = request.get_json()
+    data = request.get_json() or {}
     upload_id = data.get("uploadId")
     
     if not upload_id:
         return jsonify({"error": "Upload ID is required"}), 400
     
     provider = data.get("provider")
+    if not provider or provider not in AI_PROVIDERS:
+        return jsonify({"error": "Invalid AI provider"}), 400
+    try:
+        _ensure_provider_has_key(provider, data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
     message = data.get("message", "")
     paper_context = data.get("paper_context", {})
     annotations_context = data.get("annotations_context", "")
@@ -848,7 +897,8 @@ def chat_with_paper():
     """
     
     try:
-        response = run_async(get_ai_response(provider, prompt))
+        api_key = _effective_api_key(provider, data)
+        response = run_async(get_ai_response(provider, prompt, api_key=api_key))
         return jsonify({
             "response": response
         })
@@ -862,26 +912,16 @@ def chat_with_paper():
 
 @app.route("/ai-providers", methods=["GET"])
 def get_ai_providers():
-    # Only return providers that have API keys configured
-    available_providers = {
-        provider_id: {
-            "name": info["name"],
-            "enabled": info["enabled"]
-        }
-        for provider_id, info in AI_PROVIDERS.items()
-        if info["api_key"]  # Only include if API key is present
-    }
-    
-    print("Available providers:", available_providers)  # Debug logging
-    
+    # Return all supported providers; indicate whether server is configured with a key.
     return jsonify({
         "providers": [
             {
                 "id": provider_id,
                 "name": provider_info["name"],
-                "enabled": provider_info["enabled"]
+                "enabled": bool(provider_info.get("enabled", True)),
+                "serverConfigured": bool(provider_info.get("api_key"))
             }
-            for provider_id, provider_info in available_providers.items()
+            for provider_id, provider_info in AI_PROVIDERS.items()
         ]
     })
 
@@ -972,9 +1012,9 @@ async def perform_web_search(query, num_results=3):
         print(f"Web search error: {str(e)}")
         return ""
 
-async def get_ai_response(provider, prompt, temperature=0.7):
+async def get_ai_response(provider, prompt, temperature=0.7, api_key: str | None = None):
     logging.info("Getting AI response from provider: %s", provider)
-    logging.debug("Provider enabled status: %s", AI_PROVIDERS[provider]['enabled'])
+    logging.debug("Provider supported: %s", AI_PROVIDERS.get(provider, {}).get('enabled', False))
     
     try:
         # Extract the actual content to search for
@@ -997,11 +1037,14 @@ async def get_ai_response(provider, prompt, temperature=0.7):
             if web_results:
                 prompt += f"\n\nRelevant information from web search:\n{web_results}\n\nPlease incorporate relevant web information in your response, citing sources when appropriate."
         
-        if provider == 'gemini' and AI_PROVIDERS['gemini']['enabled']:
+        if provider == 'gemini' and AI_PROVIDERS.get('gemini', {}).get('enabled', False):
             try:
                 logging.info("Generating Gemini response...")
-                # Using new google-genai SDK
-                response = gemini_client.models.generate_content(
+                key = api_key or AI_PROVIDERS.get("gemini", {}).get("api_key")
+                if not key:
+                    raise ValueError("No Gemini API key provided.")
+                client = genai.Client(api_key=key)
+                response = client.models.generate_content(
                     model='gemini-2.5-flash',
                     contents=prompt,
                     config={'temperature': temperature}
@@ -1013,11 +1056,15 @@ async def get_ai_response(provider, prompt, temperature=0.7):
                 logging.error("Gemini error details: %s", str(e))
                 raise Exception(f"Gemini error: {str(e)}")
             
-        elif provider == 'openai' and AI_PROVIDERS['openai']['enabled']:
+        elif provider == 'openai' and AI_PROVIDERS.get('openai', {}).get('enabled', False):
             try:
                 logging.info("Generating OpenAI response...")
-                response = await openai_client.chat.completions.create(
-                    model="gpt-4-turbo-preview",
+                key = api_key or AI_PROVIDERS.get("openai", {}).get("api_key")
+                if not key:
+                    raise ValueError("No OpenAI API key provided.")
+                client = OpenAI(api_key=key)
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
                     messages=[
                         {"role": "system", "content": "You are a helpful research assistant."},
                         {"role": "user", "content": prompt}
@@ -1040,11 +1087,15 @@ async def get_ai_response(provider, prompt, temperature=0.7):
 def _sse_event(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
-def _iter_gemini_stream(prompt: str, temperature: float = 0.7):
+def _iter_gemini_stream(prompt: str, temperature: float = 0.7, api_key: str | None = None):
     if not AI_PROVIDERS.get('gemini', {}).get('enabled'):
-        raise Exception("Gemini is not enabled")
+        raise Exception("Gemini is not supported")
+    key = api_key or AI_PROVIDERS.get("gemini", {}).get("api_key")
+    if not key:
+        raise Exception("No Gemini API key provided.")
+    client = genai.Client(api_key=key)
     # Prefer streaming API when available
-    stream_fn = getattr(gemini_client.models, "generate_content_stream", None)
+    stream_fn = getattr(client.models, "generate_content_stream", None)
     if callable(stream_fn):
         for chunk in stream_fn(
             model="gemini-2.5-flash",
@@ -1056,7 +1107,7 @@ def _iter_gemini_stream(prompt: str, temperature: float = 0.7):
                 yield text
         return
     # Fallback: single-shot response
-    resp = gemini_client.models.generate_content(
+    resp = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=prompt,
         config={"temperature": temperature},
@@ -1064,16 +1115,16 @@ def _iter_gemini_stream(prompt: str, temperature: float = 0.7):
     if resp and getattr(resp, "text", None):
         yield resp.text
 
-def _iter_ai_stream(provider: str, prompt: str, temperature: float = 0.7):
+def _iter_ai_stream(provider: str, prompt: str, temperature: float = 0.7, api_key: str | None = None):
     # For now, stream Gemini; OpenAI streaming can be added once enabled.
     if provider == "gemini":
-        yield from _iter_gemini_stream(prompt, temperature=temperature)
+        yield from _iter_gemini_stream(prompt, temperature=temperature, api_key=api_key)
     elif provider == "openai" and AI_PROVIDERS.get("openai", {}).get("enabled"):
         # Fallback to non-stream until OpenAI is enabled and verified.
-        text = run_async(get_ai_response(provider, prompt, temperature=temperature))
+        text = run_async(get_ai_response(provider, prompt, temperature=temperature, api_key=api_key))
         yield text
     else:
-        text = run_async(get_ai_response(provider, prompt, temperature=temperature))
+        text = run_async(get_ai_response(provider, prompt, temperature=temperature, api_key=api_key))
         yield text
 
 @app.route("/chat-with-paper/stream", methods=["POST"])
@@ -1086,8 +1137,11 @@ def chat_with_paper_stream():
     provider = data.get("provider")
     if not provider or provider not in AI_PROVIDERS:
         return jsonify({"error": "Invalid AI provider"}), 400
-    if not AI_PROVIDERS[provider]["enabled"]:
-        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+    try:
+        _ensure_provider_has_key(provider, data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    api_key = _effective_api_key(provider, data)
 
     message = data.get("message", "")
     paper_context = data.get("paper_context", {})
@@ -1149,7 +1203,7 @@ def chat_with_paper_stream():
         yield _sse_event("start", {"ok": True})
         full = ""
         try:
-            for token in _iter_ai_stream(provider, prompt, temperature=0.7):
+            for token in _iter_ai_stream(provider, prompt, temperature=0.7, api_key=api_key):
                 full += token
                 yield _sse_event("token", {"token": token})
             yield _sse_event("done", {"ok": True, "text": full})
@@ -1168,8 +1222,11 @@ def chat_multi_stream():
     provider = data.get("provider")
     if not provider or provider not in AI_PROVIDERS:
         return jsonify({"error": "Invalid AI provider"}), 400
-    if not AI_PROVIDERS[provider]["enabled"]:
-        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+    try:
+        _ensure_provider_has_key(provider, data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    api_key = _effective_api_key(provider, data)
 
     upload_ids = data.get("uploadIds") or []
     if not isinstance(upload_ids, list) or len(upload_ids) < 2:
@@ -1248,7 +1305,7 @@ def chat_multi_stream():
         yield _sse_event("start", {"ok": True})
         full = ""
         try:
-            for token in _iter_ai_stream(provider, prompt, temperature=0.7):
+            for token in _iter_ai_stream(provider, prompt, temperature=0.7, api_key=api_key):
                 full += token
                 yield _sse_event("token", {"token": token})
             yield _sse_event("done", {"ok": True, "text": full})
@@ -1268,8 +1325,11 @@ def verify_annotation_stream():
         return jsonify({"error": "Upload ID is required"}), 400
     if not provider or provider not in AI_PROVIDERS:
         return jsonify({"error": "Invalid AI provider"}), 400
-    if not AI_PROVIDERS[provider]["enabled"]:
-        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+    try:
+        _ensure_provider_has_key(provider, data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    api_key = _effective_api_key(provider, data)
 
     annotation_text = data.get("selectedText", "")
     comment = data.get("comment", "")
@@ -1321,7 +1381,7 @@ def verify_annotation_stream():
         yield _sse_event("start", {"ok": True})
         full = ""
         try:
-            for token in _iter_ai_stream(provider, prompt, temperature=0.7):
+            for token in _iter_ai_stream(provider, prompt, temperature=0.7, api_key=api_key):
                 full += token
                 yield _sse_event("token", {"token": token})
             yield _sse_event("done", {"ok": True, "text": full})
@@ -1341,8 +1401,11 @@ def answer_question_stream():
     provider = data.get("provider")
     if not provider or provider not in AI_PROVIDERS:
         return jsonify({"error": "Invalid AI provider"}), 400
-    if not AI_PROVIDERS[provider]["enabled"]:
-        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+    try:
+        _ensure_provider_has_key(provider, data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    api_key = _effective_api_key(provider, data)
 
     question = data.get("question", "")
     context = data.get("context", "")
@@ -1387,7 +1450,7 @@ def answer_question_stream():
         yield _sse_event("start", {"ok": True})
         full = ""
         try:
-            for token in _iter_ai_stream(provider, prompt, temperature=0.7):
+            for token in _iter_ai_stream(provider, prompt, temperature=0.7, api_key=api_key):
                 full += token
                 yield _sse_event("token", {"token": token})
             yield _sse_event("done", {"ok": True, "text": full})
@@ -1779,8 +1842,10 @@ def summarize_citation():
     provider = data.get("provider")
     if not provider or provider not in AI_PROVIDERS:
         return jsonify({"error": "Invalid AI provider"}), 400
-    if not AI_PROVIDERS[provider]["enabled"]:
-        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+    try:
+        _ensure_provider_has_key(provider, data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
     citation = _get_citation_for_summary(
         upload_id,
@@ -1820,7 +1885,8 @@ def summarize_citation():
     """
 
     try:
-        summary = run_async(get_ai_response(provider, prompt))
+        api_key = _effective_api_key(provider, data)
+        summary = run_async(get_ai_response(provider, prompt, api_key=api_key))
         return jsonify({"summary": summary})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1835,8 +1901,11 @@ def summarize_citation_stream():
     provider = data.get("provider")
     if not provider or provider not in AI_PROVIDERS:
         return jsonify({"error": "Invalid AI provider"}), 400
-    if not AI_PROVIDERS[provider]["enabled"]:
-        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+    try:
+        _ensure_provider_has_key(provider, data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    api_key = _effective_api_key(provider, data)
 
     citation = _get_citation_for_summary(
         upload_id,
@@ -1878,7 +1947,7 @@ def summarize_citation_stream():
         yield _sse_event("start", {"ok": True})
         full = ""
         try:
-            for token in _iter_ai_stream(provider, prompt, temperature=0.7):
+            for token in _iter_ai_stream(provider, prompt, temperature=0.7, api_key=api_key):
                 full += token
                 yield _sse_event("token", {"token": token})
             yield _sse_event("done", {"ok": True, "text": full})
@@ -1937,7 +2006,7 @@ def get_referenced_papers_context(conversation_id):
 
 @app.route("/explain-math", methods=["POST"])
 def explain_math():
-    data = request.get_json()
+    data = request.get_json() or {}
     provider = data.get("provider")
     upload_id = data.get("uploadId")
     
@@ -1946,9 +2015,10 @@ def explain_math():
         
     if not provider or provider not in AI_PROVIDERS:
         return jsonify({"error": "Invalid AI provider"}), 400
-    
-    if not AI_PROVIDERS[provider]['enabled']:
-        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+    try:
+        _ensure_provider_has_key(provider, data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
     
     math_expression = data.get("expression", "")
     context = data.get("context", "")
@@ -1981,7 +2051,8 @@ def explain_math():
     """
     
     try:
-        response = run_async(get_ai_response(provider, prompt))
+        api_key = _effective_api_key(provider, data)
+        response = run_async(get_ai_response(provider, prompt, api_key=api_key))
         return jsonify({"explanation": response})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1996,8 +2067,11 @@ def explain_math_stream():
         return jsonify({"error": "Upload ID is required"}), 400
     if not provider or provider not in AI_PROVIDERS:
         return jsonify({"error": "Invalid AI provider"}), 400
-    if not AI_PROVIDERS[provider]["enabled"]:
-        return jsonify({"error": f"{AI_PROVIDERS[provider]['name']} is not enabled"}), 400
+    try:
+        _ensure_provider_has_key(provider, data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    api_key = _effective_api_key(provider, data)
 
     math_expression = data.get("expression", "")
     context = data.get("context", "")
@@ -2031,7 +2105,7 @@ def explain_math_stream():
         yield _sse_event("start", {"ok": True})
         full = ""
         try:
-            for token in _iter_ai_stream(provider, prompt, temperature=0.7):
+            for token in _iter_ai_stream(provider, prompt, temperature=0.7, api_key=api_key):
                 full += token
                 yield _sse_event("token", {"token": token})
             yield _sse_event("done", {"ok": True, "text": full})

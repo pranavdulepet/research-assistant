@@ -1851,6 +1851,10 @@
                     Upload
                 </button>
                 <select id="aiProvider"></select>
+                <button id="apiKeysButton" type="button" class="secondary" title="Set API key (BYOK)"
+                    style="height: 40px; width: 40px; padding: 0; border-radius: var(--radius-full); display:flex; align-items:center; justify-content:center;">
+                    <i class="material-icons">key</i>
+                </button>
                 <div id="exportMenuWrap" class="no-paper"
                     style="position: relative; display: inline-flex; align-items: center;">
                     <button id="exportMenuButton" type="button" class="secondary"
@@ -2436,6 +2440,7 @@
             showLoading('AI is verifying the annotation...');
             try {
                 const provider = getSelectedProvider();
+                const apiKey = ensureApiKey(provider);
                 const conv = conversations.find(c => c.id === currentConversationId);
                 if (!conv) {
                     console.error("No conversation found");
@@ -2475,6 +2480,7 @@
 
                 const requestData = {
                     provider: provider,  // Add provider to request
+                    apiKey: apiKey,
                     uploadId: currentConversationId,  // Add the upload ID
                     selectedText: ann.selectedText,
                     comment: ann.comment,
@@ -2482,7 +2488,7 @@
                     figures: relevantFigures
                 };
 
-                log("Sending verification request with data:", requestData);
+                log("Sending verification request");
 
                 let raw = '';
                 let scheduled = false;
@@ -2527,6 +2533,7 @@
             showLoading('AI is analyzing your question...');
             try {
                 const provider = getSelectedProvider();
+                const apiKey = ensureApiKey(provider);
                 const conv = conversations.find(c => c.id === currentConversationId);
                 if (!conv) {
                     console.error("No conversation found");
@@ -2566,6 +2573,7 @@
 
                 const requestData = {
                     provider: provider,  // Add provider to request
+                    apiKey: apiKey,
                     uploadId: currentConversationId,  // Add the upload ID
                     selectedText: ann.selectedText,
                     question: ann.comment,
@@ -2573,7 +2581,7 @@
                     figures: relevantFigures
                 };
 
-                log("Sending answer request with data:", requestData);
+                log("Sending answer request");
 
                 let raw = '';
                 let scheduled = false;
@@ -2902,6 +2910,13 @@
             document.getElementById('selectionPopup').style.display = 'none';
 
             const provider = getSelectedProvider();
+            let apiKey = '';
+            try {
+                apiKey = ensureApiKey(provider);
+            } catch (e) {
+                addMessageToChat('system', e.message || String(e));
+                return;
+            }
             const conv = conversations.find(c => c.id === currentConversationId);
             const pageNum = currentSelection.page;
 
@@ -2925,6 +2940,7 @@
 
             const requestData = {
                 provider,
+                apiKey,
                 uploadId: currentConversationId,
                 expression: currentSelection.text,
                 context: conv?.extraction?.pages?.[pageNum - 1]?.text || '',
@@ -3204,6 +3220,7 @@
 
             try {
                 const provider = getSelectedProvider();
+                const apiKey = ensureApiKey(provider);
                 const conv = conversations.find(c => c.id === currentConversationId);
 
                 // Format annotations context
@@ -3222,6 +3239,7 @@
                 const requestData = {
                     message: message,
                     provider: provider,
+                    apiKey: apiKey,
                     uploadId: currentConversationId,  // Add the upload ID
                     uploadIds: (chatScopeUploadIds && chatScopeUploadIds.length ? chatScopeUploadIds : [currentConversationId]),
                     paper_context: conversations.find(c => c.id === currentConversationId).extraction,
@@ -3392,6 +3410,131 @@
             }
         }
 
+        // BYOK (Bring Your Own Key) support: store user keys locally and send per request.
+        const API_KEYS_STORAGE_KEY = 'synopsis_ai_api_keys_v1';
+        let aiProvidersMeta = {}; // providerId -> { serverConfigured, enabled, name }
+
+        function getStoredApiKeys() {
+            try {
+                const raw = localStorage.getItem(API_KEYS_STORAGE_KEY);
+                const parsed = raw ? JSON.parse(raw) : {};
+                return (parsed && typeof parsed === 'object') ? parsed : {};
+            } catch (_) {
+                return {};
+            }
+        }
+
+        function setStoredApiKey(providerId, apiKey) {
+            const keys = getStoredApiKeys();
+            keys[providerId] = (apiKey || '').trim();
+            localStorage.setItem(API_KEYS_STORAGE_KEY, JSON.stringify(keys));
+        }
+
+        function getApiKeyForProvider(providerId) {
+            const keys = getStoredApiKeys();
+            const k = (keys && keys[providerId]) ? String(keys[providerId]).trim() : '';
+            return k || '';
+        }
+
+        function ensureApiKey(providerId) {
+            const meta = aiProvidersMeta[providerId] || {};
+            const key = getApiKeyForProvider(providerId);
+            if (!key && !meta.serverConfigured) {
+                openApiKeysModal(providerId);
+                throw new Error(`No API key set for ${meta.name || providerId}. Click the key icon and paste your API key.`);
+            }
+            return key; // may be empty if serverConfigured=true
+        }
+
+        function openApiKeysModal(defaultProviderId) {
+            const existing = document.getElementById('apiKeysModal');
+            if (existing) existing.remove();
+
+            const providerOptions = Object.keys(aiProvidersMeta).map(pid => {
+                const m = aiProvidersMeta[pid] || {};
+                const selected = pid === defaultProviderId ? 'selected' : '';
+                const label = `${m.name || pid}${m.serverConfigured ? ' (server)' : ''}`;
+                return `<option value="${pid}" ${selected}>${escapeHtml(label)}</option>`;
+            }).join('');
+
+            const modal = document.createElement('div');
+            modal.id = 'apiKeysModal';
+            modal.style.position = 'fixed';
+            modal.style.inset = '0';
+            modal.style.zIndex = '3000';
+            modal.style.background = 'rgba(0,0,0,0.45)';
+            modal.style.display = 'flex';
+            modal.style.alignItems = 'center';
+            modal.style.justifyContent = 'center';
+
+            modal.innerHTML = `
+                <div style="width:min(560px, 92vw); background: var(--color-surface-elevated); border: 1px solid var(--color-border); border-radius: 16px; box-shadow: var(--shadow-lg); padding: 16px;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap: 12px;">
+                        <div style="display:flex; align-items:center; gap: 10px;">
+                            <i class="material-icons">key</i>
+                            <div style="font-weight:700;">API Key (Bring Your Own Key)</div>
+                        </div>
+                        <button id="apiKeysClose" class="secondary" type="button" style="height: 36px; width: 36px; padding: 0; border-radius: var(--radius-full); display:flex; align-items:center; justify-content:center;">
+                            <i class="material-icons">close</i>
+                        </button>
+                    </div>
+
+                    <div style="margin-top: 12px; color: var(--color-secondary-text); font-size: 13px;">
+                        Your key is stored only in this browser (<code>localStorage</code>) and sent to the server per request. It is not persisted server-side.
+                    </div>
+
+                    <div style="margin-top: 14px; display:flex; gap: 10px; align-items:center;">
+                        <label style="font-size: 13px; font-weight: 600;">Provider</label>
+                        <select id="apiKeysProvider" style="flex:1; height: 40px; border-radius: 12px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text); padding: 0 12px;">
+                            ${providerOptions}
+                        </select>
+                    </div>
+
+                    <div style="margin-top: 10px;">
+                        <input id="apiKeysInput" type="password" autocomplete="off" spellcheck="false"
+                            placeholder="Paste your API key"
+                            style="width:100%; height: 44px; border-radius: 12px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text); padding: 0 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;" />
+                    </div>
+
+                    <div style="margin-top: 14px; display:flex; justify-content:flex-end; gap: 10px;">
+                        <button id="apiKeysClear" type="button" class="secondary">Clear</button>
+                        <button id="apiKeysSave" type="button">Save</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            const close = () => modal.remove();
+            modal.querySelector('#apiKeysClose').addEventListener('click', close);
+            modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+
+            const providerSel = modal.querySelector('#apiKeysProvider');
+            const input = modal.querySelector('#apiKeysInput');
+
+            const loadExisting = () => {
+                const pid = providerSel.value;
+                const existingKey = getApiKeyForProvider(pid);
+                input.value = existingKey;
+                input.placeholder = (aiProvidersMeta[pid]?.serverConfigured)
+                    ? 'Optional (server key is configured). Paste to override with your own.'
+                    : 'Paste your API key';
+            };
+            providerSel.addEventListener('change', loadExisting);
+            loadExisting();
+
+            modal.querySelector('#apiKeysClear').addEventListener('click', () => {
+                const pid = providerSel.value;
+                setStoredApiKey(pid, '');
+                input.value = '';
+            });
+            modal.querySelector('#apiKeysSave').addEventListener('click', () => {
+                const pid = providerSel.value;
+                setStoredApiKey(pid, input.value);
+                close();
+            });
+        }
+
         // Add this after window.onload
         async function loadAIProviders() {
             try {
@@ -3399,6 +3542,7 @@
                 const data = await response.json();
                 const select = document.getElementById('aiProvider');
                 select.innerHTML = ''; // Clear existing options
+                aiProvidersMeta = {};
 
                 // Add available providers from the backend
                 data.providers.forEach(provider => {
@@ -3407,6 +3551,11 @@
                     option.textContent = provider.name;
                     option.disabled = !provider.enabled;
                     select.appendChild(option);
+                    aiProvidersMeta[provider.id] = {
+                        serverConfigured: !!provider.serverConfigured,
+                        enabled: !!provider.enabled,
+                        name: provider.name
+                    };
                 });
 
                 // If no providers are available, add a default disabled option
@@ -3646,6 +3795,9 @@
         // Add this to your initialization code (e.g., at the end of the file or in DOMContentLoaded)
         document.addEventListener('DOMContentLoaded', function () {
             checkExistingTasks();
+            document.getElementById('apiKeysButton')?.addEventListener('click', () => {
+                openApiKeysModal(getSelectedProvider());
+            });
         });
 
         // Add this function to handle adding annotations to chat
@@ -3974,6 +4126,13 @@
             if (!citation || !currentConversationId) return;
 
             const provider = getSelectedProvider();
+            let apiKey = '';
+            try {
+                apiKey = ensureApiKey(provider);
+            } catch (e) {
+                addMessageToChat('system', e.message || String(e));
+                return;
+            }
 
             const modal = document.createElement('div');
             modal.className = 'ai-response-modal';
@@ -3995,6 +4154,7 @@
 
             const requestData = {
                 provider,
+                apiKey,
                 uploadId: currentConversationId,
                 doi: citation.doi || '',
                 arxiv_id: citation.arxiv_id || '',
